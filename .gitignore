@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Ansible Core
+*.retry
+ansible.cfg
+ansible/inventory/hosts.ini
+
+# Ansible Vault
+.vault_pass*
+*.vault_pass
+vault_password_file
+
+.env
+*.log
