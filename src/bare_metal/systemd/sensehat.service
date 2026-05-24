@@ -1,0 +1,22 @@
+[Unit]
+Description=Mesh sensor publisher: Sense HAT
+After=network-online.target nats-broker.service
+Wants=network-online.target
+Requires=nats-broker.service
+
+[Service]
+Type=simple
+User=mesh
+Group=mesh
+SupplementaryGroups=i2c
+EnvironmentFile=/etc/default/iot-mesh
+WorkingDirectory=/opt/iot-mesh-cluster
+ExecStart=/opt/iot-mesh-cluster/.venv/bin/python -m bare_metal.sensors.sensehat
+Restart=on-failure
+RestartSec=5
+ProtectSystem=strict
+ProtectHome=true
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

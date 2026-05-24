@@ -10,8 +10,7 @@ ansible.cfg
 ansible/inventory/hosts.ini
 
 # Ansible Vault
-.vault_pass*
-*.vault_pass
+.vault_pass.txt
 vault_password_file
 
 .env

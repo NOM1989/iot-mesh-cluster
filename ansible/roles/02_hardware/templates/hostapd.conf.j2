@@ -1,0 +1,14 @@
+interface={{ hotspot.interface }}
+driver=nl80211
+ssid={{ hotspot_ssid }}
+hw_mode=g
+channel={{ hotspot.channel }}
+ieee80211n=1
+wmm_enabled=1
+country_code=GB
+auth_algs=1
+wpa=2
+wpa_passphrase={{ vault_hotspot_psk[inventory_hostname] }}
+wpa_key_mgmt=WPA-PSK
+rsn_pairwise=CCMP
+ignore_broadcast_ssid=0

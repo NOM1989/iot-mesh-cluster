@@ -1,0 +1,23 @@
+# Podman Quadlet for the local NATS broker.
+# Deployed to /etc/containers/systemd/nats-broker.container by 04_deploy.
+# `systemctl daemon-reload` generates nats-broker.service automatically.
+
+[Unit]
+Description=NATS broker (mesh cluster node)
+After=network-online.target tailscaled.service
+Wants=network-online.target
+
+[Container]
+Image=docker.io/library/nats:2.10-alpine
+ContainerName=nats-broker
+Network=host
+Volume=/etc/nats/nats.conf:/etc/nats/nats.conf:ro,z
+Volume=/etc/nats/seeds:/etc/nats/seeds:ro,z
+Exec=-c /etc/nats/nats.conf
+
+[Service]
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target default.target

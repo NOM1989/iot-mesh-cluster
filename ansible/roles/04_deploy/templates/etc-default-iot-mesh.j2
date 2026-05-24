@@ -1,0 +1,9 @@
+# Rendered by Ansible. Sourced by every iot-mesh systemd service.
+HOST_LABEL={{ host_label }}
+NATS_URL=nats://127.0.0.1:{{ nats.client_port }}
+CONFIG_PATH=/etc/iot-mesh/config.json
+
+SENSEHAT_SEED=/etc/nats/seeds/sensehat.nk
+
+MMWAVE_SEED=/etc/nats/seeds/mmwave.nk
+MMWAVE_HOST={{ msr2.static_ip }}

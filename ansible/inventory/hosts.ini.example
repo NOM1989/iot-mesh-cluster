@@ -1,0 +1,10 @@
+# Copy to ansible/inventory/hosts.ini (gitignored).
+# ansible_host should be the Pi's Tailscale MagicDNS name.
+
+[cluster]
+viscous  ansible_host=pi-viscous.tailnet-XXXX.ts.net
+wave     ansible_host=pi-wave.tailnet-XXXX.ts.net
+
+[cluster:vars]
+ansible_user=pi
+ansible_python_interpreter=/usr/bin/python3

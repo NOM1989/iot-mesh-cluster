@@ -1,0 +1,120 @@
+---
+# Sense HAT needs I2C; MSR-2 connects over the Pi's own hotspot.
+# Upstream WiFi (wlan1) is left to the operator — already up when Ansible runs.
+
+# ── I2C for Sense HAT ────────────────────────────────────────────────
+- name: Detect Pi boot config path
+  ansible.builtin.stat:
+    path: /boot/firmware/config.txt
+  register: boot_firmware
+
+- name: Set boot_config_path fact
+  ansible.builtin.set_fact:
+    boot_config_path: "{{ '/boot/firmware/config.txt' if boot_firmware.stat.exists else '/boot/config.txt' }}"
+
+- name: Enable I2C in boot config
+  ansible.builtin.lineinfile:
+    path: "{{ boot_config_path }}"
+    regexp: '^#?dtparam=i2c_arm='
+    line: 'dtparam=i2c_arm=on'
+
+- name: Ensure i2c-dev loads at boot
+  ansible.builtin.lineinfile:
+    path: /etc/modules
+    line: i2c-dev
+
+# ── Hotspot on wlan0 (hostapd + dnsmasq + systemd-networkd) ─────────
+- name: Install hotspot packages
+  ansible.builtin.apt:
+    name:
+      - hostapd
+      - dnsmasq
+      - iptables-persistent
+    state: present
+
+- name: Take wlan0 out of NetworkManager
+  ansible.builtin.copy:
+    dest: /etc/NetworkManager/conf.d/99-wlan0-unmanaged.conf
+    mode: "0644"
+    content: |
+      [keyfile]
+      unmanaged-devices=interface-name:{{ hotspot.interface }}
+  notify: restart NetworkManager
+
+- name: Assign static IP to hotspot interface
+  ansible.builtin.copy:
+    dest: "/etc/systemd/network/10-{{ hotspot.interface }}.network"
+    mode: "0644"
+    content: |
+      [Match]
+      Name={{ hotspot.interface }}
+
+      [Network]
+      Address={{ hotspot.gateway }}/24
+      ConfigureWithoutCarrier=yes
+      LinkLocalAddressing=no
+      IPMasquerade=no
+      IPForward=no
+  notify: restart systemd-networkd
+
+- name: Enable systemd-networkd
+  ansible.builtin.systemd:
+    name: systemd-networkd
+    enabled: true
+    state: started
+
+- name: Template hostapd config
+  ansible.builtin.template:
+    src: hostapd.conf.j2
+    dest: /etc/hostapd/hostapd.conf
+    mode: "0600"
+  notify: restart hostapd
+  no_log: true
+
+- name: Point hostapd defaults at our config
+  ansible.builtin.lineinfile:
+    path: /etc/default/hostapd
+    regexp: '^#?DAEMON_CONF='
+    line: 'DAEMON_CONF="/etc/hostapd/hostapd.conf"'
+  notify: restart hostapd
+
+- name: Template dnsmasq config for the hotspot
+  ansible.builtin.template:
+    src: dnsmasq.conf.j2
+    dest: "/etc/dnsmasq.d/{{ hotspot.interface }}.conf"
+    mode: "0644"
+  notify: restart dnsmasq
+
+- name: Unmask hostapd
+  ansible.builtin.systemd:
+    name: hostapd
+    masked: false
+
+- name: Enable hostapd and dnsmasq
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    enabled: true
+    state: started
+  loop:
+    - hostapd
+    - dnsmasq
+
+# ── Isolation: MSR-2 must not reach the internet ─────────────────────
+- name: Disable IPv4 forwarding
+  ansible.posix.sysctl:
+    name: net.ipv4.ip_forward
+    value: "0"
+    state: present
+    sysctl_file: /etc/sysctl.d/99-iot-mesh.conf
+    reload: true
+
+- name: Defence-in-depth: drop FORWARD from hotspot to upstream
+  ansible.builtin.iptables:
+    chain: FORWARD
+    in_interface: "{{ hotspot.interface }}"
+    out_interface: "{{ upstream_interface }}"
+    jump: DROP
+
+- name: Persist iptables rules
+  ansible.builtin.command: netfilter-persistent save
+  changed_when: false

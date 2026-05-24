@@ -1,0 +1,95 @@
+---
+- name: Set system timezone
+  community.general.timezone:
+    name: "{{ timezone }}"
+
+- name: Ensure systemd-timesyncd is enabled
+  ansible.builtin.systemd:
+    name: systemd-timesyncd
+    enabled: true
+    state: started
+
+- name: Update apt cache
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Install base packages
+  ansible.builtin.apt:
+    name:
+      - git
+      - python3
+      - python3-venv
+      - python3-pip
+      - i2c-tools
+      - jq
+      - ca-certificates
+      - curl
+      - gnupg
+    state: present
+
+- name: Create mesh group
+  ansible.builtin.group:
+    name: mesh
+    system: true
+
+- name: Create mesh service user
+  ansible.builtin.user:
+    name: mesh
+    group: mesh
+    groups: [i2c]
+    append: true
+    system: true
+    shell: /usr/sbin/nologin
+    home: /opt/iot-mesh-cluster
+    create_home: false
+
+# ── Tailscale ─────────────────────────────────────────────────────────
+- name: Detect Debian codename
+  ansible.builtin.command: lsb_release -cs
+  register: debian_codename
+  changed_when: false
+
+- name: Install Tailscale apt signing key
+  ansible.builtin.get_url:
+    url: "https://pkgs.tailscale.com/stable/raspbian/{{ debian_codename.stdout }}.noarmor.gpg"
+    dest: /usr/share/keyrings/tailscale-archive-keyring.gpg
+    mode: "0644"
+
+- name: Install Tailscale apt repo
+  ansible.builtin.get_url:
+    url: "https://pkgs.tailscale.com/stable/raspbian/{{ debian_codename.stdout }}.tailscale-keyring.list"
+    dest: /etc/apt/sources.list.d/tailscale.list
+    mode: "0644"
+  register: ts_repo
+
+- name: Refresh apt cache after adding Tailscale repo
+  ansible.builtin.apt:
+    update_cache: true
+  when: ts_repo.changed
+
+- name: Install Tailscale
+  ansible.builtin.apt:
+    name: tailscale
+    state: present
+
+- name: Enable tailscaled
+  ansible.builtin.systemd:
+    name: tailscaled
+    enabled: true
+    state: started
+
+- name: Check whether this node is already on the tailnet
+  ansible.builtin.command: tailscale ip -4
+  register: ts_ip
+  changed_when: false
+  failed_when: false
+
+- name: Bring Tailscale up on first run
+  ansible.builtin.command: >-
+    tailscale up
+      --authkey={{ vault_tailscale_authkey }}
+      --hostname={{ host_label }}
+      --ssh
+  when: ts_ip.rc != 0
+  no_log: true

@@ -1,0 +1,107 @@
+---
+# Public cluster configuration. Secrets live in vault.yml.
+
+cluster_name: rpi-mesh
+timezone: Europe/London
+
+# Tailnet domain suffix for cluster routing.
+tailnet_domain: "rya-banana.ts.net"
+
+# ── NATS broker ──────────────────────────────────────────────────────
+nats:
+  client_port:     4222
+  cluster_port:    6222
+  monitoring_port: 8222
+  cluster_name:    rpi-mesh-cluster
+  image:           "docker.io/library/nats:2.10-alpine"
+
+# Per-service NATS NKey public keys. Populated by scripts/generate_nkeys.sh.
+nats_users:
+  sensehat:
+    viscous: "UCLQKDYMUZEDO4UVVJ32SZMCANKWCE3NUMQSZLYTJPTRAZ4GNEBCE4QC"
+    wave: "UBXCDRWFOIRQ33TQCHUQPJYWFAY6N4ZZIZRKPY7ZVFGKIL4V7P7INYFZ"
+  mmwave:
+    viscous: "UBUK3QHHIAOSW6NNKWZU4UHKPFAL5NO4XKEZIAL46VBDQPP6L5OZG4ZR"
+    wave: "UB4RLL57R76UDFMUPGI3BVON3FHGQ7KLFWBYSL3SQEO4H7IJ7HO2AVE2"
+  intercom:
+    viscous: "UBMCEYBGLS6NS5QDFPNUQLKDO55UIVQYUGWPMAQXTKNPLPPP2JY6SY63"
+    wave: "UCEZFHSIGECXUQEWVB67DX4JV4OTZRCKBHG4ASPYCD7P6N3U6DE7CVHO"
+  logic:
+    viscous: "UBCKQXLXMHGR6KQ3LFNFWZX4GSI6J7YUDGPYPBI4KBENK64JRLBCPFGW"
+    wave: "UD2O7ZESQOYPGC2TFGHEQM2PA46MD5DD4Q3RIOZEZRWXWJ62VPXO6PIU"
+
+# Cluster-route shared credential (NATS doesn't support plain-NKey
+# server-to-server auth without operator mode, so we use a shared token
+# inside the Tailscale tunnel). Username is public; token is in vault.
+nats_cluster_user: route
+
+# Subject permissions per service. {{ host_label }} is expanded by Ansible
+# during nats.conf.j2 rendering.
+nats_permissions:
+  sensehat:
+    pub: ["sensors.{{ host_label }}.sensehat.>"]
+    sub: ["_INBOX.>"]
+  mmwave:
+    pub:
+      - "sensors.{{ host_label }}.msr2.>"
+      - "info.{{ host_label }}.msr2.>"
+      - "config.{{ host_label }}.msr2.>"
+    sub: ["_INBOX.>"]
+  intercom:
+    pub: ["sensors.{{ host_label }}.intercom.>"]
+    sub:
+      - "command.{{ host_label }}.intercom.>"
+      - "_INBOX.>"
+  logic:
+    pub:
+      - "command.>"
+      - "events.>"
+    sub:
+      - "sensors.>"
+      - "info.>"
+      - "config.>"
+      - "_INBOX.>"
+
+# ── Networking ───────────────────────────────────────────────────────
+hotspot:
+  interface:  wlan0
+  subnet:     "192.168.10.0/24"
+  gateway:    "192.168.10.1"
+  netmask:    "255.255.255.0"
+  dhcp_start: "192.168.10.20"
+  dhcp_end:   "192.168.10.50"
+  channel:    6
+
+upstream_interface: wlan1
+
+# ── Publishers ───────────────────────────────────────────────────────
+publish:
+  sensehat_hz: 1
+
+# ── MSR-2 entity → NATS mapping ──────────────────────────────────────
+# Anything not listed here and not in `skipped` falls through to the
+# config.* tree if it's a Number/Switch/Select entity, else is dropped.
+msr2_entity_map:
+  sensors:
+    radar_target:             { metric: presence,           value_type: bool }
+    radar_moving_target:      { metric: motion,             value_type: bool }
+    radar_still_target:       { metric: still_presence,     value_type: bool }
+    radar_zone_1_occupancy:   { metric: zone1,              value_type: bool }
+    radar_zone_2_occupancy:   { metric: zone2,              value_type: bool }
+    radar_zone_3_occupancy:   { metric: zone3,              value_type: bool }
+    radar_moving_distance:    { metric: distance.moving,    unit: meter }
+    radar_still_distance:     { metric: distance.still,     unit: meter }
+    radar_detection_distance: { metric: distance.detection, unit: meter }
+    dps310_temperature:       { metric: temperature,        unit: celsius,      source: dps310 }
+    dps310_pressure:          { metric: pressure,           unit: hectopascal,  source: dps310 }
+    ltr390_light:             { metric: illuminance,        unit: lux,          source: ltr390 }
+    ltr390_uv_index:          { metric: uv_index,                               source: ltr390 }
+    esp_temperature:          { metric: esp_chip_temp,      unit: celsius,      source: esp }
+    online:                   { metric: online,             value_type: bool }
+    rssi:                     { metric: rssi,               unit: dbm }
+    uptime:                   { metric: uptime,             unit: second }
+  info:
+    radar_firmware_version:   { metric: firmware_version }
+  skipped:
+    - co2
+    - calibrate_scd40_to_420ppm

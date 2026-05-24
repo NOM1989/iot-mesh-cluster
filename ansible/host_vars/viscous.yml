@@ -1,0 +1,8 @@
+---
+host_label: pi-viscous
+hotspot_ssid: pi-mesh-viscous
+upstream_wifi_key: viscous
+
+msr2:
+  mac: "48:f6:ee:2c:b7:d4"
+  static_ip: "192.168.10.10"

@@ -1,0 +1,10 @@
+---
+- name: Configure RPi mesh cluster
+  hosts: cluster
+  become: true
+  gather_facts: true
+  roles:
+    - 01_base_os
+    - 02_hardware
+    - 03_podman
+    - 04_deploy

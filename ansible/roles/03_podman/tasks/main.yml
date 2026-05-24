@@ -1,0 +1,17 @@
+---
+- name: Install Podman and Quadlet generator
+  ansible.builtin.apt:
+    name:
+      - podman
+      - catatonit
+    state: present
+
+- name: Ensure systemd Quadlet directory exists
+  ansible.builtin.file:
+    path: /etc/containers/systemd
+    state: directory
+    mode: "0755"
+
+- name: Reload systemd to pick up Quadlet generator
+  ansible.builtin.systemd:
+    daemon_reload: true

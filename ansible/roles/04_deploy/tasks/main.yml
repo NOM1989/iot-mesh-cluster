@@ -1,0 +1,150 @@
+---
+# ── Directories ──────────────────────────────────────────────────────
+- name: Create app and config directories
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ item.owner | default('root') }}"
+    group: "{{ item.group | default('root') }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - { path: /opt/iot-mesh-cluster,     owner: mesh, group: mesh, mode: "0755" }
+    - { path: /etc/nats,                                            mode: "0755" }
+    - { path: /etc/nats/seeds,           owner: mesh, group: mesh, mode: "0700" }
+    - { path: /etc/iot-mesh,                                        mode: "0755" }
+
+# ── NATS config + secrets ────────────────────────────────────────────
+- name: Render nats.conf
+  ansible.builtin.template:
+    src: "{{ playbook_dir }}/../config/nats/nats.conf.j2"
+    dest: /etc/nats/nats.conf
+    mode: "0644"
+  register: nats_conf
+
+- name: Drop NKey seed files
+  ansible.builtin.copy:
+    content: "{{ vault_nats_seeds[inventory_hostname][item] }}\n"
+    dest: "/etc/nats/seeds/{{ item }}.nk"
+    owner: mesh
+    group: mesh
+    mode: "0400"
+  loop: "{{ vault_nats_seeds[inventory_hostname].keys() | list }}"
+  when: vault_nats_seeds[inventory_hostname] | length > 0
+  no_log: true
+  register: seed_writes
+
+# ── NATS broker Quadlet ──────────────────────────────────────────────
+- name: Install NATS broker Quadlet
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../config/quadlets/nats-broker.container"
+    dest: /etc/containers/systemd/nats-broker.container
+    mode: "0644"
+  register: nats_quadlet
+
+- name: Reload systemd (picks up Quadlet-generated nats-broker.service)
+  ansible.builtin.systemd:
+    daemon_reload: true
+
+- name: Ensure nats-broker is enabled and running
+  ansible.builtin.systemd:
+    name: nats-broker
+    enabled: true
+    state: started
+
+- name: Restart nats-broker if any of its inputs changed
+  ansible.builtin.systemd:
+    name: nats-broker
+    state: restarted
+  when: >
+    nats_conf.changed
+    or nats_quadlet.changed
+    or (seed_writes.results | default([]) | selectattr('changed') | list | length > 0)
+
+# ── Application code ─────────────────────────────────────────────────
+- name: Sync bare_metal source tree
+  ansible.posix.synchronize:
+    src: "{{ playbook_dir }}/../src/bare_metal/"
+    dest: /opt/iot-mesh-cluster/bare_metal/
+    delete: true
+    rsync_opts:
+      - "--exclude=__pycache__"
+      - "--exclude=*.pyc"
+      - "--exclude=systemd"
+  register: code_sync
+
+- name: Copy requirements.txt
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../src/bare_metal/requirements.txt"
+    dest: /opt/iot-mesh-cluster/requirements.txt
+    mode: "0644"
+  register: reqs
+
+- name: Create / refresh Python venv
+  ansible.builtin.pip:
+    requirements: /opt/iot-mesh-cluster/requirements.txt
+    virtualenv: /opt/iot-mesh-cluster/.venv
+    virtualenv_command: python3 -m venv
+  when: reqs.changed or not (lookup('ansible.builtin.fileglob', '/opt/iot-mesh-cluster/.venv/bin/python') | length > 0)
+
+- name: Own venv and code by mesh user
+  ansible.builtin.file:
+    path: "{{ item }}"
+    owner: mesh
+    group: mesh
+    recurse: true
+  loop:
+    - /opt/iot-mesh-cluster/bare_metal
+    - /opt/iot-mesh-cluster/.venv
+
+# ── Runtime config + env ─────────────────────────────────────────────
+- name: Render runtime config.json
+  ansible.builtin.copy:
+    dest: /etc/iot-mesh/config.json
+    mode: "0644"
+    content: "{{ runtime_config | to_nice_json }}"
+  vars:
+    runtime_config:
+      publish: "{{ publish }}"
+      msr2_entity_map: "{{ msr2_entity_map }}"
+  register: runtime_cfg
+
+- name: Render service environment file
+  ansible.builtin.template:
+    src: etc-default-iot-mesh.j2
+    dest: /etc/default/iot-mesh
+    mode: "0644"
+  register: env_file
+
+# ── Publisher systemd units ──────────────────────────────────────────
+- name: Install publisher systemd units
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../src/bare_metal/systemd/{{ item }}.service"
+    dest: "/etc/systemd/system/{{ item }}.service"
+    mode: "0644"
+  loop:
+    - sensehat
+    - mmwave
+  register: unit_files
+
+- name: Reload systemd after unit changes
+  ansible.builtin.systemd:
+    daemon_reload: true
+  when: unit_files.changed
+
+- name: Enable + start publishers
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    enabled: true
+    state: started
+  loop:
+    - sensehat
+    - mmwave
+
+- name: Restart publishers on code/config change
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    state: restarted
+  loop:
+    - sensehat
+    - mmwave
+  when: code_sync.changed or reqs.changed or runtime_cfg.changed or env_file.changed

@@ -1,0 +1,49 @@
+{#
+  Rendered per host into /etc/nats/nats.conf by role 04_deploy.
+
+  Each Pi runs its own NATS broker with:
+    - 4 local service users (sensehat, mmwave, intercom, logic), keyed by
+      this host's NKey pubkeys.
+    - A cluster block listing ALL hosts' route pubkeys so peers can
+      authenticate inbound route connections.
+    - Outbound routes to every OTHER cluster host via Tailscale MagicDNS.
+#}
+server_name: "{{ host_label }}"
+host: 0.0.0.0
+port: {{ nats.client_port }}
+
+http: "127.0.0.1:{{ nats.monitoring_port }}"
+
+authorization {
+  users: [
+{% for svc, perms in nats_permissions.items() %}
+    {
+      nkey: "{{ nats_users[svc][inventory_hostname] }}",
+      permissions: {
+        publish:   { allow: {{ perms.pub   | to_json }} },
+        subscribe: { allow: {{ perms.sub   | to_json }} }
+      }
+    }{% if not loop.last %},{% endif %}
+
+{% endfor %}
+  ]
+}
+
+cluster {
+  name: "{{ nats.cluster_name }}"
+  host: 0.0.0.0
+  port: {{ nats.cluster_port }}
+
+  authorization {
+    user:     "{{ nats_cluster_user }}"
+    password: "{{ vault_nats_cluster_token }}"
+    timeout:  2
+  }
+
+  routes: [
+{% for h in groups['cluster'] if h != inventory_hostname %}
+    "nats-route://{{ nats_cluster_user }}:{{ vault_nats_cluster_token }}@{{ hostvars[h].host_label }}.{{ tailnet_domain }}:{{ nats.cluster_port }}"{% if not loop.last %},{% endif %}
+
+{% endfor %}
+  ]
+}

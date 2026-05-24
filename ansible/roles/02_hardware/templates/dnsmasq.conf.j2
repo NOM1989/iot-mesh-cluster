@@ -1,0 +1,13 @@
+# DHCP for the hotspot interface only.
+interface={{ hotspot.interface }}
+bind-interfaces
+listen-address={{ hotspot.gateway }}
+no-resolv
+no-hosts
+domain-needed
+bogus-priv
+
+dhcp-range={{ hotspot.dhcp_start }},{{ hotspot.dhcp_end }},{{ hotspot.netmask }},24h
+
+# MSR-2: pin a known IP so the publisher can dial it directly.
+dhcp-host={{ msr2.mac }},{{ msr2.static_ip }},msr2-{{ inventory_hostname }},infinite
