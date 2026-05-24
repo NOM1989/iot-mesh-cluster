@@ -45,20 +45,17 @@
     create_home: false
 
 # ── Tailscale ─────────────────────────────────────────────────────────
-- name: Detect Debian codename
-  ansible.builtin.command: lsb_release -cs
-  register: debian_codename
-  changed_when: false
-
+# Uses ansible_distribution_release (gathered fact) so we don't depend on
+# lsb-release being installed. Works on Bookworm and Trixie.
 - name: Install Tailscale apt signing key
   ansible.builtin.get_url:
-    url: "https://pkgs.tailscale.com/stable/raspbian/{{ debian_codename.stdout }}.noarmor.gpg"
+    url: "https://pkgs.tailscale.com/stable/raspbian/{{ ansible_distribution_release }}.noarmor.gpg"
     dest: /usr/share/keyrings/tailscale-archive-keyring.gpg
     mode: "0644"
 
 - name: Install Tailscale apt repo
   ansible.builtin.get_url:
-    url: "https://pkgs.tailscale.com/stable/raspbian/{{ debian_codename.stdout }}.tailscale-keyring.list"
+    url: "https://pkgs.tailscale.com/stable/raspbian/{{ ansible_distribution_release }}.tailscale-keyring.list"
     dest: /etc/apt/sources.list.d/tailscale.list
     mode: "0644"
   register: ts_repo

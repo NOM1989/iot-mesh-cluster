@@ -55,7 +55,7 @@ On the operator's machine:
 
 On each Pi (one-time, manual):
 
-- Raspberry Pi OS Bookworm (64-bit) flashed and reachable via the home network on `wlan1`
+- Raspberry Pi OS Trixie (64-bit) flashed and reachable via the home network on `wlan1`
 - A user with SSH + passwordless `sudo` (default: `pi`)
 - The MSR-2 already flashed with ESPHome, configured to associate to the per-Pi hotspot SSID (`pi-mesh-<nickname>`) with the matching PSK. The ESPHome API runs unencrypted (no `api.encryption.key`) — the hotspot subnet only ever contains this Pi and this MSR-2, with no route to the internet
 
