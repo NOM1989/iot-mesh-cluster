@@ -4,5 +4,5 @@ hotspot_ssid: pi-mesh-wave
 upstream_wifi_key: wave
 
 msr2:
-  mac: "AA:BB:CC:DD:EE:FF"
+  mac: "48:F6:EE:29:68:44"
   static_ip: "192.168.10.10"

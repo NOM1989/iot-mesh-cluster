@@ -3,6 +3,17 @@
   hosts: cluster
   become: true
   gather_facts: true
+  pre_tasks:
+    # Silences the recurring "remote_tmp /root/.ansible/tmp did not exist"
+    # warning by ensuring the directory exists with the expected mode before
+    # any module needs it.
+    - name: Ensure root's ansible tmp dir exists
+      ansible.builtin.file:
+        path: /root/.ansible/tmp
+        state: directory
+        owner: root
+        group: root
+        mode: "0700"
   roles:
     - 01_base_os
     - 02_hardware
