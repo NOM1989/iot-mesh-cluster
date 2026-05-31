@@ -108,7 +108,7 @@
     sysctl_file: /etc/sysctl.d/99-iot-mesh.conf
     reload: true
 
-- name: Defence-in-depth: drop FORWARD from hotspot to upstream
+- name: "Defence-in-depth: drop FORWARD from hotspot to upstream"
   ansible.builtin.iptables:
     chain: FORWARD
     in_interface: "{{ hotspot.interface }}"

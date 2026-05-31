@@ -22,6 +22,7 @@
       - python3-venv
       - python3-pip
       - i2c-tools
+      - python3-sense-hat
       - jq
       - ca-certificates
       - curl
@@ -45,17 +46,17 @@
     create_home: false
 
 # ── Tailscale ─────────────────────────────────────────────────────────
-# Uses ansible_distribution_release (gathered fact) so we don't depend on
+# Uses the gathered distribution_release fact so we don't depend on
 # lsb-release being installed. Works on Bookworm and Trixie.
 - name: Install Tailscale apt signing key
   ansible.builtin.get_url:
-    url: "https://pkgs.tailscale.com/stable/raspbian/{{ ansible_distribution_release }}.noarmor.gpg"
+    url: "https://pkgs.tailscale.com/stable/raspbian/{{ ansible_facts['distribution_release'] }}.noarmor.gpg"
     dest: /usr/share/keyrings/tailscale-archive-keyring.gpg
     mode: "0644"
 
 - name: Install Tailscale apt repo
   ansible.builtin.get_url:
-    url: "https://pkgs.tailscale.com/stable/raspbian/{{ ansible_distribution_release }}.tailscale-keyring.list"
+    url: "https://pkgs.tailscale.com/stable/raspbian/{{ ansible_facts['distribution_release'] }}.tailscale-keyring.list"
     dest: /etc/apt/sources.list.d/tailscale.list
     mode: "0644"
   register: ts_repo

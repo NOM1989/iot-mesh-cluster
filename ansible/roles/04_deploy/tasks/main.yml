@@ -83,7 +83,7 @@
   ansible.builtin.pip:
     requirements: /opt/iot-mesh-cluster/requirements.txt
     virtualenv: /opt/iot-mesh-cluster/.venv
-    virtualenv_command: python3 -m venv
+    virtualenv_command: python3 -m venv --system-site-packages
   when: reqs.changed or not (lookup('ansible.builtin.fileglob', '/opt/iot-mesh-cluster/.venv/bin/python') | length > 0)
 
 - name: Own venv and code by mesh user

@@ -1,3 +1,7 @@
 nats-py>=2.6.0
+nkeys>=0.2.0
 aioesphomeapi>=24.0.0
-sense-hat>=2.6.0
+# sense_hat itself comes from the apt package python3-sense-hat
+# (it depends on python3-rtimulib for the RTIMU C extension, which
+# is not on PyPI). The venv is created with --system-site-packages
+# so it can import the apt-installed module.

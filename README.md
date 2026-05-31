@@ -86,6 +86,15 @@ On each Pi (one-time, manual):
    - Set the MSR-2 MAC in each `ansible/host_vars/<host>.yml`
 
 5. **Run the playbook:**
+
+   *First run on a new Pi* — the host isn't on the tailnet yet, so override
+   `ansible_host` with its LAN address and limit the run to that one host:
+   ```bash
+   ansible-playbook ansible/site.yml -l viscous -e ansible_host=192.168.1.236
+   ```
+
+   *Steady-state* — once Tailscale is up, the MagicDNS name in the inventory
+   resolves, so no overrides needed:
    ```bash
    ansible-playbook ansible/site.yml
    ```
