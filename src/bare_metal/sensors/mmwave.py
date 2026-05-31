@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 import signal
 from typing import Any
 
@@ -87,6 +88,11 @@ class MmwaveBridge:
         tree, metric, unit, source = target
         value = getattr(state, "state", None)
         if value is None:
+            return
+        # The radar emits NaN for distance when no target is detected. NaN is
+        # not valid JSON and would corrupt the message envelope; treat it as
+        # "no reading" and drop.
+        if isinstance(value, float) and not math.isfinite(value):
             return
         try:
             await self._pub.publish(tree, metric, value, unit=unit, source=source)

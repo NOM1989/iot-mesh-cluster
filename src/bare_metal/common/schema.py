@@ -40,4 +40,6 @@ def build_message(
         msg["unit"] = unit
     if source is not None:
         msg["source"] = source
-    return json.dumps(msg, separators=(",", ":")).encode("utf-8")
+    # allow_nan=False makes json.dumps raise on NaN/Inf instead of emitting
+    # invalid JSON. Publishers are expected to filter non-finite floats.
+    return json.dumps(msg, separators=(",", ":"), allow_nan=False).encode("utf-8")
