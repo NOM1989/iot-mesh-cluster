@@ -89,9 +89,9 @@ msr2_entity_map:
     radar_zone_1_occupancy:   { metric: zone1,              value_type: bool }
     radar_zone_2_occupancy:   { metric: zone2,              value_type: bool }
     radar_zone_3_occupancy:   { metric: zone3,              value_type: bool }
-    radar_moving_distance:    { metric: distance.moving,    unit: meter }
-    radar_still_distance:     { metric: distance.still,     unit: meter }
-    radar_detection_distance: { metric: distance.detection, unit: meter }
+    radar_moving_distance:    { metric: distance.moving,    unit: millimeter }
+    radar_still_distance:     { metric: distance.still,     unit: millimeter }
+    radar_detection_distance: { metric: distance.detection, unit: millimeter }
     dps310_temperature:       { metric: temperature,        unit: celsius,      source: dps310 }
     dps310_pressure:          { metric: pressure,           unit: hectopascal,  source: dps310 }
     ltr390_light:             { metric: illuminance,        unit: lux,          source: ltr390 }
