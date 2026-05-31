@@ -23,7 +23,9 @@
 
 - name: Drop NKey seed files
   ansible.builtin.copy:
-    content: "{{ vault_nats_seeds[inventory_hostname][item] }}\n"
+    # No trailing newline: nats-py reads this file verbatim and passes it
+    # straight to nkeys.from_seed, which rejects any non-base32 byte.
+    content: "{{ vault_nats_seeds[inventory_hostname][item] }}"
     dest: "/etc/nats/seeds/{{ item }}.nk"
     owner: mesh
     group: mesh
