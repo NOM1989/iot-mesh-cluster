@@ -81,12 +81,17 @@
     mode: "0644"
   register: reqs
 
+- name: Check whether the venv already exists on the target
+  ansible.builtin.stat:
+    path: /opt/iot-mesh-cluster/.venv/bin/python
+  register: venv_python
+
 - name: Create / refresh Python venv
   ansible.builtin.pip:
     requirements: /opt/iot-mesh-cluster/requirements.txt
     virtualenv: /opt/iot-mesh-cluster/.venv
     virtualenv_command: python3 -m venv --system-site-packages
-  when: reqs.changed or not (lookup('ansible.builtin.fileglob', '/opt/iot-mesh-cluster/.venv/bin/python') | length > 0)
+  when: reqs.changed or not venv_python.stat.exists
 
 - name: Own venv and code by mesh user
   ansible.builtin.file:

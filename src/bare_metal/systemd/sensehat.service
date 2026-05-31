@@ -17,6 +17,10 @@ RestartSec=5
 ProtectSystem=strict
 ProtectHome=true
 NoNewPrivileges=true
+# sense_hat caches IMU calibration under the user's home dir (resolved
+# via pwd, not $HOME). The mesh user's home is /var/lib/iot-mesh; this
+# directive ensures it exists and is writable by the service.
+StateDirectory=iot-mesh
 
 [Install]
 WantedBy=multi-user.target

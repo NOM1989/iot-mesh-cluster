@@ -42,7 +42,10 @@
     append: true
     system: true
     shell: /usr/sbin/nologin
-    home: /opt/iot-mesh-cluster
+    # Home points at the systemd StateDirectory created by each publisher
+    # service. sense_hat looks up the home dir via pwd.getpwuid (it ignores
+    # $HOME), so it must resolve to a writable location.
+    home: /var/lib/iot-mesh
     create_home: false
 
 # ── Tailscale ─────────────────────────────────────────────────────────
