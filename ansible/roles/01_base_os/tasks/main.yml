@@ -38,7 +38,10 @@
   ansible.builtin.user:
     name: mesh
     group: mesh
-    groups: [i2c]
+    # i2c for the Sense HAT sensors, input so /dev/input/event0
+    # (the joystick) is readable — the sense_hat library opens it
+    # eagerly even when we don't subscribe to events.
+    groups: [i2c, input]
     append: true
     system: true
     shell: /usr/sbin/nologin
