@@ -40,7 +40,9 @@ nats_cluster_user: route
 nats_permissions:
   sensehat:
     pub: ["sensors.{{ host_label }}.sensehat.>"]
-    sub: ["_INBOX.>"]
+    sub:
+      - "command.{{ host_label }}.sensehat.>"
+      - "_INBOX.>"
   mmwave:
     pub:
       - "sensors.{{ host_label }}.msr2.>"

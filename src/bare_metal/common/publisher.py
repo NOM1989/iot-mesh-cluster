@@ -51,6 +51,12 @@ class MeshPublisher:
             await self._nc.drain()
             self._nc = None
 
+    async def subscribe(self, subject: str, cb) -> "nats.aio.subscription.Subscription":
+        """Subscribe to a NATS subject, returning the subscription handle."""
+        if self._nc is None:
+            raise RuntimeError("MeshPublisher not connected")
+        return await self._nc.subscribe(subject, cb=cb)
+
     async def publish(
         self,
         tree: str,

@@ -14,6 +14,7 @@ import signal
 from sense_hat import SenseHat
 
 from bare_metal.common import MeshPublisher, load_runtime_config
+from bare_metal.display.matrix import run_matrix_subscriber
 
 log = logging.getLogger(__name__)
 
@@ -81,7 +82,9 @@ async def main() -> None:
     for sig in (signal.SIGINT, signal.SIGTERM):
         loop.add_signal_handler(sig, stop.set)
 
-    try:
+    matrix_subject = f"command.{cfg.host_label}.sensehat.>"
+
+    async def sensor_loop() -> None:
         while not stop.is_set():
             t0 = loop.time()
             readings = await loop.run_in_executor(None, _read_all, sense)
@@ -91,6 +94,12 @@ async def main() -> None:
                 await asyncio.wait_for(stop.wait(), timeout=max(0.0, interval - elapsed))
             except asyncio.TimeoutError:
                 pass
+
+    try:
+        await asyncio.gather(
+            sensor_loop(),
+            run_matrix_subscriber(sense, pub._nc, matrix_subject, loop, stop),
+        )
     finally:
         await pub.close()
         log.info("Sense HAT publisher stopped")
