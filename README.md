@@ -119,6 +119,16 @@ journalctl -u sensehat -f
 ## Operations
 
 - **Rotate a service key**: regenerate one entry, replace in `vars.yml` (public) and `vault.yml` (seed), re-run Ansible.
-- **Add a sensor metric**: extend `src/bare_metal/sensors/<file>.py`; re-run.
+- **Add a sensor metric**: extend `src/bare_metal/sensors/<file>.py`; re-run with `--tags code`.
 - **Add a new MSR-2 entity to the sensor tree**: add it to `msr2_entity_map.sensors` in `vars.yml`; re-run.
 - **Engineering-mode gate energies**: flip `radar_engineering_mode` from any NATS client; the mmwave publisher will pick up the state change and start streaming `sensors.<host>.msr2.gates.*`.
+
+### Partial runs
+
+The playbook supports two tags to avoid running all four roles on every change:
+
+| Command | What runs | Use when |
+|---|---|---|
+| `ansible-playbook ansible/site.yml` | Everything | First deploy or changing OS/hardware/NATS config |
+| `ansible-playbook ansible/site.yml --tags deploy` | Role `04_deploy` only (NATS + code) | NATS config, secrets, or broker changes |
+| `ansible-playbook ansible/site.yml --tags code` | Code sync, venv, service units, restart | Python script or runtime config changes |

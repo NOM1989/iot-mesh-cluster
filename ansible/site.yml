@@ -18,4 +18,5 @@
     - 01_base_os
     - 02_hardware
     - 03_podman
-    - 04_deploy
+    - role: 04_deploy
+      tags: [deploy]

@@ -64,6 +64,7 @@
 
 # ── Application code ─────────────────────────────────────────────────
 - name: Sync bare_metal source tree
+  tags: code
   ansible.posix.synchronize:
     src: "{{ playbook_dir }}/../src/bare_metal/"
     dest: /opt/iot-mesh-cluster/bare_metal/
@@ -75,6 +76,7 @@
   register: code_sync
 
 - name: Copy requirements.txt
+  tags: code
   ansible.builtin.copy:
     src: "{{ playbook_dir }}/../src/bare_metal/requirements.txt"
     dest: /opt/iot-mesh-cluster/requirements.txt
@@ -82,11 +84,13 @@
   register: reqs
 
 - name: Check whether the venv already exists on the target
+  tags: code
   ansible.builtin.stat:
     path: /opt/iot-mesh-cluster/.venv/bin/python
   register: venv_python
 
 - name: Create / refresh Python venv
+  tags: code
   ansible.builtin.pip:
     requirements: /opt/iot-mesh-cluster/requirements.txt
     virtualenv: /opt/iot-mesh-cluster/.venv
@@ -94,6 +98,7 @@
   when: reqs.changed or not venv_python.stat.exists
 
 - name: Own venv and code by mesh user
+  tags: code
   ansible.builtin.file:
     path: "{{ item }}"
     owner: mesh
@@ -105,6 +110,7 @@
 
 # ── Runtime config + env ─────────────────────────────────────────────
 - name: Render runtime config.json
+  tags: code
   ansible.builtin.copy:
     dest: /etc/iot-mesh/config.json
     mode: "0644"
@@ -119,6 +125,7 @@
   register: runtime_cfg
 
 - name: Render service environment file
+  tags: code
   ansible.builtin.template:
     src: etc-default-iot-mesh.j2
     dest: /etc/default/iot-mesh
@@ -127,6 +134,7 @@
 
 # ── Publisher systemd units ──────────────────────────────────────────
 - name: Install publisher systemd units
+  tags: code
   ansible.builtin.copy:
     src: "{{ playbook_dir }}/../src/bare_metal/systemd/{{ item }}.service"
     dest: "/etc/systemd/system/{{ item }}.service"
@@ -138,11 +146,13 @@
   register: unit_files
 
 - name: Reload systemd after unit changes
+  tags: code
   ansible.builtin.systemd:
     daemon_reload: true
   when: unit_files.changed
 
 - name: Enable + start publishers
+  tags: code
   ansible.builtin.systemd:
     name: "{{ item }}"
     enabled: true
@@ -153,6 +163,7 @@
     - logic-presence
 
 - name: Restart publishers on code/config change
+  tags: code
   ansible.builtin.systemd:
     name: "{{ item }}"
     state: restarted
