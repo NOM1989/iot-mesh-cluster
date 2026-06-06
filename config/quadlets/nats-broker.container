@@ -6,6 +6,7 @@
 Description=NATS broker (mesh cluster node)
 After=network-online.target tailscaled.service
 Wants=network-online.target
+# tailscaled.service active ≠ tunnel ready; wait until Tailscale has peers.
 
 [Container]
 Image=docker.io/library/nats:2.10-alpine
@@ -16,6 +17,7 @@ Volume=/etc/nats/seeds:/etc/nats/seeds:ro,z
 Exec=-c /etc/nats/nats.conf
 
 [Service]
+ExecStartPre=/bin/sh -c 'until tailscale status 2>/dev/null | grep -qE "^100\\."; do sleep 2; done'
 Restart=on-failure
 RestartSec=5
 

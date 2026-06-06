@@ -40,9 +40,10 @@ cluster {
     timeout:  2
   }
 
+  # Use Tailscale IPs directly — avoids MagicDNS not being ready at boot.
   routes: [
 {% for h in groups['cluster'] if h != inventory_hostname %}
-    "nats-route://{{ nats_cluster_user }}:{{ vault_nats_cluster_token }}@{{ hostvars[h].host_label }}.{{ tailnet_domain }}:{{ nats.cluster_port }}"{% if not loop.last %},{% endif %}
+    "nats-route://{{ nats_cluster_user }}:{{ vault_nats_cluster_token }}@{{ hostvars[h].tailscale_ip }}:{{ nats.cluster_port }}"{% if not loop.last %},{% endif %}
 
 {% endfor %}
   ]

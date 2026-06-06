@@ -1,5 +1,6 @@
 ---
 host_label: pi-wave
+tailscale_ip: "100.78.123.26"
 hotspot_ssid: pi-mesh-wave
 upstream_wifi_key: wave
 

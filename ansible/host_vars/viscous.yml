@@ -1,5 +1,6 @@
 ---
 host_label: pi-viscous
+tailscale_ip: "100.121.240.61"
 hotspot_ssid: pi-mesh-viscous
 upstream_wifi_key: viscous
 
