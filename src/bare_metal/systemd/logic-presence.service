@@ -1,0 +1,21 @@
+[Unit]
+Description=Mesh logic: presence → SenseHAT matrix
+After=network-online.target nats-broker.service
+Wants=network-online.target
+Requires=nats-broker.service
+
+[Service]
+Type=simple
+User=mesh
+Group=mesh
+EnvironmentFile=/etc/default/iot-mesh
+WorkingDirectory=/opt/iot-mesh-cluster
+ExecStart=/opt/iot-mesh-cluster/.venv/bin/python -m bare_metal.logic.presence_matrix
+Restart=on-failure
+RestartSec=5
+ProtectSystem=strict
+ProtectHome=true
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

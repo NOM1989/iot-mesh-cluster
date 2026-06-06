@@ -113,6 +113,9 @@
     runtime_config:
       publish: "{{ publish }}"
       msr2_entity_map: "{{ msr2_entity_map }}"
+      cluster_hosts: "{{ groups['cluster'] | map('extract', hostvars, 'host_label') | list }}"
+      logic:
+        presence_hold_off_s: 0
   register: runtime_cfg
 
 - name: Render service environment file
@@ -131,6 +134,7 @@
   loop:
     - sensehat
     - mmwave
+    - logic-presence
   register: unit_files
 
 - name: Reload systemd after unit changes
@@ -146,6 +150,7 @@
   loop:
     - sensehat
     - mmwave
+    - logic-presence
 
 - name: Restart publishers on code/config change
   ansible.builtin.systemd:
@@ -154,4 +159,5 @@
   loop:
     - sensehat
     - mmwave
+    - logic-presence
   when: code_sync.changed or reqs.changed or runtime_cfg.changed or env_file.changed
