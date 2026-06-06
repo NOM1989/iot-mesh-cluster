@@ -22,6 +22,7 @@ import colorsys
 import json
 import logging
 import math
+import threading
 from typing import Any
 
 from sense_hat import SenseHat
@@ -50,6 +51,7 @@ class MatrixController:
         self._sense = sense
         self._loop = loop
         self._task: asyncio.Task | None = None
+        self._hw_lock = threading.Lock()
 
     async def run(self, effect: str, params: dict[str, Any]) -> None:
         if self._task and not self._task.done():
@@ -96,12 +98,23 @@ class MatrixController:
         # sense_hat API — clear(tuple) behaves inconsistently across versions.
         r, g, b = color
         pixels = [[r, g, b]] * 64
-        await self._loop.run_in_executor(None, self._sense.set_pixels, pixels)
+        def _write() -> None:
+            with self._hw_lock:
+                self._sense.set_pixels(pixels)
+        await self._loop.run_in_executor(None, _write)
+
+    async def _clear(self) -> None:
+        # Wrapped so the hw_lock serialises this against any in-flight _set_all
+        # thread that survived task cancellation.
+        def _write() -> None:
+            with self._hw_lock:
+                self._sense.clear()
+        await self._loop.run_in_executor(None, _write)
 
     # ── effects ──────────────────────────────────────────────────────────
 
     async def _effect_off(self, params: dict) -> None:
-        await self._loop.run_in_executor(None, self._sense.clear)
+        await self._clear()
 
     async def _effect_solid(self, params: dict) -> None:
         color = _parse_color(params.get("color"), _WHITE)
@@ -131,7 +144,7 @@ class MatrixController:
             for _ in range(count):
                 await self._set_all(color)
                 await asyncio.sleep(half)
-                await self._loop.run_in_executor(None, self._sense.clear)
+                await self._clear()
                 await asyncio.sleep(half)
         except asyncio.CancelledError:
             raise
