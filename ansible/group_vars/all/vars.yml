@@ -29,6 +29,10 @@ nats_users:
   logic:
     viscous: "UBCKQXLXMHGR6KQ3LFNFWZX4GSI6J7YUDGPYPBI4KBENK64JRLBCPFGW"
     wave: "UD2O7ZESQOYPGC2TFGHEQM2PA46MD5DD4Q3RIOZEZRWXWJ62VPXO6PIU"
+  # Voice assistant NKey pubkeys.
+  voice:
+    viscous: "UBHR5R325YA2O55BTDEQII2RDOUCNNXZ4EUE2VPNPU54JD3MSRFRXCYO"
+    wave: "UBBXZJT2O5ZKM4RHMRYZQ77SVZ7TTHQHF5VQNCPBS25FP6PZATCZ3CTL"
 
 # Cluster-route shared credential (NATS doesn't support plain-NKey
 # server-to-server auth without operator mode, so we use a shared token
@@ -63,6 +67,14 @@ nats_permissions:
       - "sensors.>"
       - "info.>"
       - "config.>"
+      - "_INBOX.>"
+  voice:
+    pub:
+      - "sensors.{{ host_label }}.voice.>"
+      - "command.{{ host_label }}.sensehat.*"
+    sub:
+      - "command.{{ host_label }}.intercom.*"
+      - "command.{{ host_label }}.voice.*"
       - "_INBOX.>"
 
 # ── Networking ───────────────────────────────────────────────────────

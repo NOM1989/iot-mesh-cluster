@@ -131,6 +131,14 @@
       intercom:
         audio_device: "{{ intercom.audio_device | default('plughw:USB') }}"
         audio_port: "{{ intercom.audio_port | default(5000) }}"
+      voice:
+        audio_device: "{{ intercom.audio_device | default('plughw:USB') }}"
+        vosk_model: "/opt/iot-mesh-cluster/models/voice/vosk-model-small-en-us-0.15"
+        silero_model: "/opt/iot-mesh-cluster/models/voice/silero_vad.onnx"
+        wake_model: "hey_jarvis"
+        vad_threshold: 0.5
+        vad_silence_ms: 800
+        chunk_ms: 80
   register: runtime_cfg
 
 - name: Render service environment file
@@ -155,6 +163,7 @@
     - boot-status
     - logic-connectivity
     - intercom
+    - voice-assistant
   register: unit_files
 
 - name: Reload systemd after unit changes
@@ -175,6 +184,7 @@
     - logic-presence
     - logic-connectivity
     - intercom
+    - voice-assistant
 
 - name: Enable boot-status (oneshot — only enable, do not start now)
   tags: code
@@ -193,4 +203,5 @@
     - logic-presence
     - logic-connectivity
     - intercom
+    - voice-assistant
   when: code_sync.changed or reqs.changed or runtime_cfg.changed or env_file.changed

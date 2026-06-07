@@ -132,3 +132,18 @@ The playbook supports two tags to avoid running all four roles on every change:
 | `ansible-playbook ansible/site.yml` | Everything | First deploy or changing OS/hardware/NATS config |
 | `ansible-playbook ansible/site.yml --tags deploy` | Role `04_deploy` only (NATS + code) | NATS config, secrets, or broker changes |
 | `ansible-playbook ansible/site.yml --tags code` | Code sync, venv, service units, restart | Python script or runtime config changes |
+
+
+## Testing
+
+### Trigger a call with
+```bash
+onats --server=nats://pi-viscous.rya-banana.ts.net:4222 --nkey=~/tmp/viscous-logic.nk \
+  pub "command.pi-viscous.intercom.call" '{"action":"call_out","to":"pi-wave"}'
+
+nats --server=nats://pi-wave.rya-banana.ts.net:4222 --nkey=~/tmp/wave-logic.nk \
+  pub "command.pi-wave.intercom.call" '{"action":"call_accept"}'
+
+nats --server=nats://pi-viscous.rya-banana.ts.net:4222 --nkey=~/tmp/viscous-logic.nk \
+  pub "command.pi-viscous.intercom.call" '{"action":"call_terminate"}'
+```

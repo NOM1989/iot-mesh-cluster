@@ -1,0 +1,128 @@
+---
+# ── System packages ───────────────────────────────────────────────────
+- name: Install voice assistant system dependencies
+  ansible.builtin.apt:
+    name:
+      - portaudio19-dev   # required by PyAudio C extension
+      - python3-dev       # C headers for building pyaudio wheel
+      - libgomp1          # OpenMP runtime used by onnxruntime
+      - wget
+      - unzip
+    state: present
+
+# ── Voice pip packages ────────────────────────────────────────────────
+# Installed here — after portaudio19-dev — so pyaudio's C extension can
+# compile. Kept separate from the main requirements.txt / 04_deploy venv
+# refresh because pyaudio would fail to build there (no portaudio yet).
+#
+# openwakeword is installed with --no-deps because its declared dependency
+# on tflite-runtime has no Python 3.13 ARM64 wheel. We use the ONNX
+# inference backend (onnxruntime) instead and install its other deps below.
+- name: Install voice base Python packages into shared venv
+  ansible.builtin.pip:
+    name:
+      - "pyaudio>=0.2.14"
+      - "onnxruntime>=1.17.0"
+      - "vosk>=0.3.45"
+      - "scipy>=1.3"
+      - "scikit-learn>=1.0"
+      - "tqdm>=4.0"
+    virtualenv: /opt/iot-mesh-cluster/.venv
+    state: present
+
+- name: Install openwakeword without tflite-runtime dependency
+  ansible.builtin.pip:
+    name: "openwakeword>=0.6.0"
+    virtualenv: /opt/iot-mesh-cluster/.venv
+    extra_args: "--no-deps"
+    state: present
+
+# Pip runs as root; re-grant mesh ownership so download_models() can write
+# into site-packages/openwakeword/resources/ without a PermissionError.
+- name: Fix venv ownership after voice pip install
+  ansible.builtin.file:
+    path: /opt/iot-mesh-cluster/.venv
+    owner: mesh
+    group: mesh
+    recurse: true
+
+# ── Model directory ───────────────────────────────────────────────────
+- name: Create voice model directory
+  ansible.builtin.file:
+    path: /opt/iot-mesh-cluster/models/voice
+    state: directory
+    owner: mesh
+    group: mesh
+    mode: "0755"
+
+# ── Vosk small English model (~50 MB) ─────────────────────────────────
+- name: Check if Vosk model is already present
+  ansible.builtin.stat:
+    path: /opt/iot-mesh-cluster/models/voice/vosk-model-small-en-us-0.15
+  register: vosk_model_dir
+
+- name: Download Vosk small English model
+  ansible.builtin.get_url:
+    url: "https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip"
+    dest: /tmp/vosk-model-small-en-us-0.15.zip
+    mode: "0644"
+    timeout: 180
+  when: not vosk_model_dir.stat.exists
+
+- name: Unzip Vosk model
+  ansible.builtin.unarchive:
+    src: /tmp/vosk-model-small-en-us-0.15.zip
+    dest: /opt/iot-mesh-cluster/models/voice/
+    remote_src: true
+    owner: mesh
+    group: mesh
+  when: not vosk_model_dir.stat.exists
+
+- name: Remove Vosk model zip
+  ansible.builtin.file:
+    path: /tmp/vosk-model-small-en-us-0.15.zip
+    state: absent
+
+- name: Ensure Vosk model owned by mesh
+  ansible.builtin.file:
+    path: /opt/iot-mesh-cluster/models/voice/vosk-model-small-en-us-0.15
+    owner: mesh
+    group: mesh
+    recurse: true
+  when: vosk_model_dir.stat.exists == false
+
+# ── Silero VAD ONNX model (~2 MB) ─────────────────────────────────────
+# Uses the ONNX export from snakers4/silero-vad — no PyTorch at runtime.
+- name: Check if Silero VAD ONNX model is present
+  ansible.builtin.stat:
+    path: /opt/iot-mesh-cluster/models/voice/silero_vad.onnx
+  register: silero_model
+
+- name: Download Silero VAD ONNX model
+  ansible.builtin.get_url:
+    url: "https://github.com/snakers4/silero-vad/raw/master/src/silero_vad/data/silero_vad.onnx"
+    dest: /opt/iot-mesh-cluster/models/voice/silero_vad.onnx
+    owner: mesh
+    group: mesh
+    mode: "0644"
+    timeout: 60
+  when: not silero_model.stat.exists
+
+# ── openWakeWord default models ────────────────────────────────────────
+# Models are cached to $HOME/.cache/openwakeword/. The mesh user's HOME
+# is /var/lib/iot-mesh (from the passwd entry created in 01_base_os).
+# We pre-download here so the service starts without network access.
+- name: Check if openWakeWord models are already cached
+  ansible.builtin.stat:
+    path: /var/lib/iot-mesh/.cache/openwakeword
+  register: oww_cache
+
+- name: Pre-download openWakeWord default models
+  ansible.builtin.command:
+    cmd: >-
+      /opt/iot-mesh-cluster/.venv/bin/python -c
+      "import openwakeword; openwakeword.utils.download_models()"
+  become_user: mesh
+  environment:
+    HOME: /var/lib/iot-mesh
+  when: not oww_cache.stat.exists

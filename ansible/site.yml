@@ -20,3 +20,5 @@
     - 03_podman
     - role: 04_deploy
       tags: [deploy]
+    - role: 05_voice_assistant
+      tags: [voice]

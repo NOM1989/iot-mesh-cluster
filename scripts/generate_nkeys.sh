@@ -18,7 +18,7 @@ if ! command -v nk &>/dev/null; then
 fi
 
 HOSTS=(viscous wave)
-SERVICES=(sensehat mmwave intercom logic)
+SERVICES=(sensehat mmwave intercom logic voice)
 
 nkey_pair() {
     local seed pub

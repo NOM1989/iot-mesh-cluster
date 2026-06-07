@@ -1,0 +1,23 @@
+[Unit]
+Description=Mesh voice assistant: wake word → VAD → STT → NATS
+After=network-online.target nats-broker.service
+Wants=network-online.target
+Requires=nats-broker.service
+
+[Service]
+Type=simple
+User=mesh
+Group=mesh
+SupplementaryGroups=audio
+EnvironmentFile=/etc/default/iot-mesh
+WorkingDirectory=/opt/iot-mesh-cluster
+ExecStart=/opt/iot-mesh-cluster/.venv/bin/python -m bare_metal.voice.assistant
+Restart=on-failure
+RestartSec=5
+ProtectSystem=strict
+ProtectHome=true
+NoNewPrivileges=true
+StateDirectory=iot-mesh
+
+[Install]
+WantedBy=multi-user.target
