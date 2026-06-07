@@ -27,6 +27,8 @@ from typing import Any
 
 from sense_hat import SenseHat
 
+from bare_metal.display.status_renderer import render_frame as _render_status_frame
+
 log = logging.getLogger(__name__)
 
 _WHITE = (255, 255, 255)
@@ -62,11 +64,12 @@ class MatrixController:
                 pass
 
         handler = {
-            "off":     self._effect_off,
-            "solid":   self._effect_solid,
-            "pulse":   self._effect_pulse,
-            "flash":   self._effect_flash,
-            "rainbow": self._effect_rainbow,
+            "off":          self._effect_off,
+            "solid":        self._effect_solid,
+            "pulse":        self._effect_pulse,
+            "flash":        self._effect_flash,
+            "rainbow":      self._effect_rainbow,
+            "status_bars":  self._effect_status_bars,
         }.get(effect)
 
         if handler is None:
@@ -92,6 +95,14 @@ class MatrixController:
                 pass
 
     # ── helpers ──────────────────────────────────────────────────────────
+
+    async def _set_pixels(self, pixels: list[tuple[int, int, int]]) -> None:
+        # Convert to list-of-lists for maximum sense_hat version compatibility.
+        pixels_ll = [[r, g, b] for r, g, b in pixels]
+        def _write() -> None:
+            with self._hw_lock:
+                self._sense.set_pixels(pixels_ll)
+        await self._loop.run_in_executor(None, _write)
 
     async def _set_all(self, color: tuple[int, int, int]) -> None:
         # set_pixels with an explicit list-of-lists is the safest form of the
@@ -146,6 +157,32 @@ class MatrixController:
                 await asyncio.sleep(half)
                 await self._clear()
                 await asyncio.sleep(half)
+        except asyncio.CancelledError:
+            raise
+
+    async def _effect_status_bars(self, params: dict) -> None:
+        """Left-to-right comet sweep on up to 8 rows.
+
+        Command format:
+          {"effect": "status_bars",
+           "stages": {"0": {"indicator": [r,g,b], "status": [r,g,b]}, ...},
+           "speed": 1.0}
+
+        Keys in `stages` are row indices (0-7). Rows not listed are off.
+        The comet sweeps cols 2-7 on each row; cols 0-1 stay solid.
+        """
+        raw_stages: dict = params.get("stages", {})
+        # Coerce string keys (JSON object keys) to int.
+        stages = {int(k): v for k, v in raw_stages.items()}
+        speed = float(params.get("speed", 1.0))
+        step_delay = 0.15 / max(speed, 0.05)
+        sweep_pos = 0
+        try:
+            while True:
+                pixels = _render_status_frame(stages, sweep_pos)
+                await self._set_pixels(pixels)
+                await asyncio.sleep(step_delay)
+                sweep_pos = (sweep_pos + 1) % 6
         except asyncio.CancelledError:
             raise
 

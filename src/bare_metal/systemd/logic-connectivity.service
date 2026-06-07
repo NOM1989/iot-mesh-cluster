@@ -1,0 +1,21 @@
+[Unit]
+Description=Mesh logic: connectivity state → LED matrix
+After=nats-broker.service
+Requires=nats-broker.service
+
+[Service]
+Type=simple
+User=mesh
+Group=mesh
+EnvironmentFile=/etc/default/iot-mesh
+WorkingDirectory=/opt/iot-mesh-cluster
+ExecStart=/opt/iot-mesh-cluster/.venv/bin/python -m bare_metal.logic.connectivity_matrix
+Restart=on-failure
+RestartSec=5
+ProtectSystem=strict
+ProtectHome=true
+NoNewPrivileges=true
+StateDirectory=iot-mesh
+
+[Install]
+WantedBy=multi-user.target

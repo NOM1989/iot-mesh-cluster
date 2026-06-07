@@ -13,7 +13,7 @@ import signal
 
 from sense_hat import SenseHat
 
-from bare_metal.common import MeshPublisher, load_runtime_config
+from bare_metal.common import MeshPublisher, build_message, load_runtime_config
 from bare_metal.display.matrix import run_matrix_subscriber
 
 log = logging.getLogger(__name__)
@@ -61,6 +61,60 @@ async def _publish_tick(pub: MeshPublisher, r: dict) -> None:
                       unit="degree", source="lsm9ds1")
 
 
+async def _tcp_reachable(host: str, port: int, timeout: float = 5.0) -> bool:
+    try:
+        _, writer = await asyncio.wait_for(
+            asyncio.open_connection(host, port), timeout=timeout
+        )
+        writer.close()
+        await writer.wait_closed()
+        return True
+    except (OSError, asyncio.TimeoutError):
+        return False
+
+
+async def _poll_network(
+    pub: MeshPublisher,
+    host_label: str,
+    peer_ips: list[str],
+    stop: asyncio.Event,
+) -> None:
+    """Poll internet + RPi-RPi reachability every 10s; publish as bool sensors."""
+    INTERVAL = 10.0
+
+    async def _probe_and_publish() -> None:
+        nc = pub._nc
+        if nc is None:
+            return  # Not yet connected; skip this round.
+
+        internet = await _tcp_reachable("8.8.8.8", 53)
+
+        rpi_rpi = False
+        for ip in peer_ips:
+            if await _tcp_reachable(ip, 4222):
+                rpi_rpi = True
+                break
+
+        for metric, value in (("internet", internet), ("rpi_rpi", rpi_rpi)):
+            subject = f"sensors.{host_label}.sensehat.network.{metric}"
+            payload = build_message(
+                host=host_label, device="sensehat",
+                metric=f"network.{metric}", value=value,
+            )
+            await nc.publish(subject, payload)
+            log.debug("network.%s = %s", metric, value)
+
+    while not stop.is_set():
+        try:
+            await _probe_and_publish()
+        except Exception:
+            log.exception("Network connectivity probe failed")
+        try:
+            await asyncio.wait_for(stop.wait(), timeout=INTERVAL)
+        except asyncio.TimeoutError:
+            pass
+
+
 async def main() -> None:
     logging.basicConfig(
         level=logging.INFO,
@@ -70,6 +124,7 @@ async def main() -> None:
     publish_cfg = cfg.section("publish") or {}
     rate_hz = float(publish_cfg.get("sensehat_hz", 1))
     interval = 1.0 / rate_hz
+    peer_ips: list[str] = cfg.section("peer_tailscale_ips") or []
 
     pub = MeshPublisher(cfg.host_label, DEVICE, cfg.nats_url, cfg.seed_path)
     await pub.connect()
@@ -99,6 +154,7 @@ async def main() -> None:
         await asyncio.gather(
             sensor_loop(),
             run_matrix_subscriber(sense, pub._nc, matrix_subject, loop, stop),
+            _poll_network(pub, cfg.host_label, peer_ips, stop),
         )
     finally:
         await pub.close()

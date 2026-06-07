@@ -120,6 +120,12 @@
       publish: "{{ publish }}"
       msr2_entity_map: "{{ msr2_entity_map }}"
       cluster_hosts: "{{ groups['cluster'] | map('extract', hostvars, 'host_label') | list }}"
+      msr2_static_ip: "{{ msr2.static_ip }}"
+      peer_tailscale_ips: >-
+        {{ groups['cluster']
+           | reject('equalto', inventory_hostname)
+           | map('extract', hostvars, 'tailscale_ip')
+           | list }}
       logic:
         presence_hold_off_s: 0
   register: runtime_cfg
@@ -143,6 +149,8 @@
     - sensehat
     - mmwave
     - logic-presence
+    - boot-status
+    - logic-connectivity
   register: unit_files
 
 - name: Reload systemd after unit changes
@@ -151,7 +159,7 @@
     daemon_reload: true
   when: unit_files.changed
 
-- name: Enable + start publishers
+- name: Enable persistent publishers
   tags: code
   ansible.builtin.systemd:
     name: "{{ item }}"
@@ -161,6 +169,13 @@
     - sensehat
     - mmwave
     - logic-presence
+    - logic-connectivity
+
+- name: Enable boot-status (oneshot — only enable, do not start now)
+  tags: code
+  ansible.builtin.systemd:
+    name: boot-status
+    enabled: true
 
 - name: Restart publishers on code/config change
   tags: code
@@ -171,4 +186,5 @@
     - sensehat
     - mmwave
     - logic-presence
+    - logic-connectivity
   when: code_sync.changed or reqs.changed or runtime_cfg.changed or env_file.changed

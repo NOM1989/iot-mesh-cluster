@@ -1,6 +1,6 @@
 [Unit]
 Description=Mesh sensor publisher: Sense HAT
-After=network-online.target nats-broker.service
+After=network-online.target nats-broker.service boot-status.service
 Wants=network-online.target
 Requires=nats-broker.service
 

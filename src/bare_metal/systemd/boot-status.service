@@ -1,0 +1,19 @@
+[Unit]
+Description=Boot connectivity status display on LED matrix
+After=network.target
+Before=sensehat.service
+
+[Service]
+Type=oneshot
+User=mesh
+Group=mesh
+SupplementaryGroups=i2c video
+EnvironmentFile=/etc/default/iot-mesh
+WorkingDirectory=/opt/iot-mesh-cluster
+ExecStart=/opt/iot-mesh-cluster/.venv/bin/python -m bare_metal.display.boot_status
+TimeoutStartSec=320
+# Always succeed — display is best-effort; sensehat.service must not be blocked.
+SuccessExitStatus=0 1
+
+[Install]
+WantedBy=multi-user.target
