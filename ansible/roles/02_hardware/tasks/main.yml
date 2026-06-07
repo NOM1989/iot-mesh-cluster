@@ -110,7 +110,13 @@
     dest: /etc/systemd/system/hostapd.service.d/powersave-off.conf
     mode: "0644"
     content: |
+      [Unit]
+      After=sys-subsystem-net-devices-{{ hotspot.interface }}.device
+      BindsTo=sys-subsystem-net-devices-{{ hotspot.interface }}.device
+
       [Service]
+      Restart=on-failure
+      RestartSec=5
       ExecStartPost=/sbin/iw dev {{ hotspot.interface }} set power_save off
   notify: reload systemd + restart hostapd
 
