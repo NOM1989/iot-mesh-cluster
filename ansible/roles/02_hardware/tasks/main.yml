@@ -99,6 +99,21 @@
     - hostapd
     - dnsmasq
 
+- name: Create systemd override dir for hostapd
+  ansible.builtin.file:
+    path: /etc/systemd/system/hostapd.service.d
+    state: directory
+    mode: "0755"
+
+- name: Disable brcmfmac power save on AP interface after hostapd starts
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/hostapd.service.d/powersave-off.conf
+    mode: "0644"
+    content: |
+      [Service]
+      ExecStartPost=/sbin/iw dev {{ hotspot.interface }} set power_save off
+  notify: reload systemd + restart hostapd
+
 # ── Isolation: MSR-2 must not reach the internet ─────────────────────
 - name: Disable IPv4 forwarding
   ansible.posix.sysctl:

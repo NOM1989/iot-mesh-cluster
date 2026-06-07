@@ -14,6 +14,12 @@
     name: hostapd
     state: restarted
 
+- name: reload systemd + restart hostapd
+  ansible.builtin.systemd:
+    daemon_reload: true
+    name: hostapd
+    state: restarted
+
 - name: restart dnsmasq
   ansible.builtin.systemd:
     name: dnsmasq
