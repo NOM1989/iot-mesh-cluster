@@ -120,23 +120,6 @@
       ExecStartPost=/sbin/iw dev {{ hotspot.interface }} set power_save off
   notify: reload systemd + restart hostapd
 
-# ── Jabra USB HID: give audio group access for LED call-state control ─
-- name: Install Jabra udev rule
-  ansible.builtin.copy:
-    dest: /etc/udev/rules.d/99-jabra.rules
-    mode: "0644"
-    content: |
-      SUBSYSTEM=="hidraw", ATTRS{idVendor}=="0b0e", GROUP="audio", MODE="0660"
-  register: jabra_udev
-
-- name: Reload udev rules and re-trigger Jabra device
-  ansible.builtin.command: "{{ item }}"
-  loop:
-    - udevadm control --reload-rules
-    - udevadm trigger --subsystem-match=hidraw
-  when: jabra_udev.changed
-  changed_when: false
-
 # ── Isolation: MSR-2 must not reach the internet ─────────────────────
 - name: Disable IPv4 forwarding
   ansible.posix.sysctl:

@@ -31,7 +31,6 @@
       - gstreamer1.0-plugins-good
       - gstreamer1.0-plugins-bad
       - gstreamer1.0-alsa
-      - python3-hid
     state: present
 
 - name: Create mesh group

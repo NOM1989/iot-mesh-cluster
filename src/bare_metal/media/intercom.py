@@ -39,11 +39,6 @@ from enum import Enum, auto
 from pathlib import Path
 from typing import Any
 
-try:
-    import hid as _hid
-except ImportError:
-    _hid = None
-
 import nats
 
 from bare_metal.common import load_runtime_config, utc_now_iso
@@ -51,9 +46,6 @@ from bare_metal.common import load_runtime_config, utc_now_iso
 log = logging.getLogger(__name__)
 
 _CALL_SUBJECT = "command.{host}.intercom.call"
-
-_JABRA_VID = 0x0b0e
-_JABRA_PIDS = (0x0410, 0x0412)
 
 _SOUNDS_DIR = Path(__file__).parent / "sounds"
 
@@ -67,25 +59,6 @@ class State(Enum):
 
 def _ts_msg(**kwargs: Any) -> bytes:
     return json.dumps({"ts": utc_now_iso(), **kwargs}, separators=(",", ":")).encode()
-
-
-def _jabra_led(active: bool) -> None:
-    if _hid is None:
-        return
-    payload = [0x03, 0x01 if active else 0x00, 0x00]
-    for pid in _JABRA_PIDS:
-        devs = _hid.enumerate(_JABRA_VID, pid)
-        if not devs:
-            continue
-        dev = _hid.device()
-        try:
-            dev.open_path(devs[0]["path"])
-            dev.write(payload)
-        except Exception as exc:
-            log.debug("Jabra HID write failed (pid=0x%04x): %s", pid, exc)
-        finally:
-            dev.close()
-        return
 
 
 def _build_gst_tx(device: str, peer_ip: str, port: int) -> list[str]:
@@ -218,10 +191,8 @@ class Intercom:
         self._rx_proc = subprocess.Popen(
             _build_gst_rx(self._audio_device, self._audio_port),
         )
-        _jabra_led(True)
 
     def _stop_audio(self) -> None:
-        _jabra_led(False)
         for proc in (self._tx_proc, self._rx_proc):
             if proc is not None:
                 proc.terminate()
