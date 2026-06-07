@@ -1,0 +1,12 @@
+[project]
+name = "iot-mesh-cluster"
+version = "0.1.0"
+description = "Distributed mesh telepresence with rpis"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "aioesphomeapi>=45.3.1",
+    "nats-py>=2.15.0",
+    "nkeys>=0.2.1",
+    "sense-hat>=2.6.0",
+]

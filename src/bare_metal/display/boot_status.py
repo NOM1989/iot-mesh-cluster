@@ -1,16 +1,15 @@
 """Boot connectivity status display.
 
 Runs as a one-shot systemd service before sensehat.service starts. Drives
-the 8×8 LED matrix directly (no NATS) to show the three connection stages
-as they come up:
+the 8×8 LED matrix directly (no NATS) to show pending connectivity stages
+as a compact overlay in row 7 (the bottom row):
 
-  Row 0  Internet (TCP 8.8.8.8:53)
-  Row 1  MSR2 radar (TCP <msr2_static_ip>:6053)
-  Row 2  RPi↔RPi link (TCP <peer_tailscale_ip>:4222)
+  For each unresolved stage: [indicator pixel][pulsing status pixel]
+    Internet  — blue   indicator (col 0/1)
+    MSR2      — magenta indicator (col 2/3)
+    RPi↔RPi   — cyan   indicator (col 4/5)
 
-Each row shows a 2-pixel indicator block and a left-to-right comet sweep.
-Sweep colour is orange while waiting, green when connected, red on timeout.
-
+Rows 0–6 stay black. Stages clear from the overlay when they connect.
 Exits once all three stages are resolved (or after TIMEOUT_S), leaving the
 matrix clear for sensehat.service to take over.
 """
@@ -18,6 +17,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import os
 import socket
 import threading
@@ -26,19 +26,17 @@ import time
 from sense_hat import SenseHat
 
 from bare_metal.display.status_renderer import (
-    COLOR_CONNECTED,
-    COLOR_FAILED,
     COLOR_PENDING,
     STAGE_BASE_COLORS,
-    render_frame,
 )
 
 log = logging.getLogger(__name__)
 
-TIMEOUT_S = 300        # 5 minutes total
-PROBE_INTERVAL_S = 2   # seconds between TCP probe rounds
-FRAME_DELAY_S = 0.15   # animation frame rate (~6.7 fps)
+TIMEOUT_S    = 300    # 5 minutes total
+PROBE_INTERVAL_S = 2  # seconds between TCP probe rounds
+FRAME_DELAY_S    = 0.05   # ~20 fps for smooth sine pulse
 
+_OFF = (0, 0, 0)
 _STAGE_KEYS = ["internet", "msr2", "rpi_rpi"]
 
 
@@ -54,7 +52,7 @@ def _tcp_reachable(host: str, port: int, timeout: float = 5.0) -> bool:
 def _probe_loop(
     msr2_ip: str,
     peer_ips: list[str],
-    state: dict[str, str],  # "pending" | "connected" | "failed"
+    state: dict[str, str],   # "pending" | "connected" | "failed"
     lock: threading.Lock,
     done: threading.Event,
 ) -> None:
@@ -72,7 +70,6 @@ def _probe_loop(
                     continue  # already resolved
 
             if host is None:
-                # No peer configured — mark as failed immediately.
                 with lock:
                     state[key] = "failed"
                 log.warning("No peer IP configured for %s; marking failed", key)
@@ -91,19 +88,18 @@ def _probe_loop(
         done.wait(timeout=PROBE_INTERVAL_S)
 
 
-def _build_stages(state: dict[str, str]) -> dict[int, dict]:
-    status_color_map = {
-        "pending":   COLOR_PENDING,
-        "connected": COLOR_CONNECTED,
-        "failed":    COLOR_FAILED,
-    }
-    return {
-        i: {
-            "indicator": STAGE_BASE_COLORS[i],
-            "status":    status_color_map[state[_STAGE_KEYS[i]]],
-        }
-        for i in range(3)
-    }
+def _render_overlay(state: dict[str, str], t: float) -> list:
+    """64-pixel list: black background, row 7 shows failing stages."""
+    pixels: list = [_OFF] * 64
+    brightness = (math.sin(2 * math.pi * t / 2.0) + 1) / 2  # 2-second period
+    col = 0
+    for i, key in enumerate(_STAGE_KEYS):
+        if state[key] == "connected":
+            continue
+        pixels[7 * 8 + col]     = STAGE_BASE_COLORS[i]
+        pixels[7 * 8 + col + 1] = tuple(int(c * brightness) for c in COLOR_PENDING)
+        col += 2
+    return pixels
 
 
 def main() -> None:
@@ -140,13 +136,12 @@ def main() -> None:
     probe_thread.start()
 
     start = time.monotonic()
-    sweep_pos = 0
 
     try:
         while True:
             elapsed = time.monotonic() - start
+
             if elapsed >= TIMEOUT_S:
-                # Mark remaining pending stages as failed.
                 with lock:
                     for key in _STAGE_KEYS:
                         if state[key] == "pending":
@@ -158,10 +153,8 @@ def main() -> None:
             with lock:
                 snapshot = dict(state)
 
-            stages = _build_stages(snapshot)
-            pixels = render_frame(stages, sweep_pos)
-            sense.set_pixels(pixels)
-            sweep_pos = (sweep_pos + 1) % 6
+            pixels = _render_overlay(snapshot, elapsed)
+            sense.set_pixels([[r, g, b] for r, g, b in pixels])
 
             if all(s != "pending" for s in snapshot.values()):
                 done.set()

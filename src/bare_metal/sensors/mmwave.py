@@ -109,15 +109,19 @@ class MmwaveBridge:
         )
         zc = AsyncZeroconf()
 
+        await self._pub.publish("sensors", "online", False)
+
         async def on_connect() -> None:
             log.info("ESPHome connected: %s", self._mmwave_host)
             entities, _ = await client.list_entities_services()
             self._entities_by_key = {e.key: e for e in entities}
             log.info("Discovered %d entities", len(entities))
             client.subscribe_states(self._on_state_sync)
+            await self._pub.publish("sensors", "online", True)
 
         async def on_disconnect(expected: bool) -> None:
             log.warning("ESPHome disconnected (expected=%s)", expected)
+            await self._pub.publish("sensors", "online", False)
 
         reconnect = ReconnectLogic(
             client=client,

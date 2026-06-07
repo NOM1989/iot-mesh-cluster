@@ -6,11 +6,16 @@ the next one.
 
 Message format (UTF-8 JSON):
     {"effect": "pulse"}
-    {"effect": "solid",   "color": [255, 0, 0]}
-    {"effect": "pulse",   "color": [0, 128, 255], "speed": 1.0}
-    {"effect": "flash",   "color": [255, 255, 0], "count": 3, "speed": 1.0}
-    {"effect": "rainbow", "speed": 1.0}
+    {"effect": "solid",       "color": [255, 0, 0]}
+    {"effect": "pulse",       "color": [0, 128, 255], "speed": 1.0}
+    {"effect": "flash",       "color": [255, 255, 0], "count": 3, "speed": 1.0}
+    {"effect": "rainbow",     "speed": 1.0}
     {"effect": "off"}
+    {"effect": "set_overlay", "cells": [{"row": 7, "col": 0, "color": [R,G,B], "pulse": false}, ...]}
+    {"effect": "clear_overlay"}
+
+set_overlay and clear_overlay do NOT cancel the running base effect — they
+composite status indicators on top of it each frame.
 
 A bare string body ("pulse") is accepted as shorthand for {"effect": "pulse"}.
 """
@@ -23,15 +28,17 @@ import json
 import logging
 import math
 import threading
+from dataclasses import dataclass
 from typing import Any
 
 from sense_hat import SenseHat
 
-from bare_metal.display.status_renderer import render_frame as _render_status_frame
-
 log = logging.getLogger(__name__)
 
-_WHITE = (255, 255, 255)
+_WHITE: tuple[int, int, int] = (255, 255, 255)
+_OFF:   tuple[int, int, int] = (0,   0,   0)
+
+_OVERLAY_PULSE_PERIOD = 2.0   # seconds for one brightness sine cycle
 
 
 def _clamp(v: float) -> int:
@@ -39,7 +46,11 @@ def _clamp(v: float) -> int:
 
 
 def _scale(color: tuple[int, int, int], brightness: float) -> tuple[int, int, int]:
-    return (_clamp(color[0] * brightness), _clamp(color[1] * brightness), _clamp(color[2] * brightness))
+    return (
+        _clamp(color[0] * brightness),
+        _clamp(color[1] * brightness),
+        _clamp(color[2] * brightness),
+    )
 
 
 def _parse_color(raw: Any, default: tuple[int, int, int]) -> tuple[int, int, int]:
@@ -48,14 +59,63 @@ def _parse_color(raw: Any, default: tuple[int, int, int]) -> tuple[int, int, int
     return default
 
 
+@dataclass(frozen=True)
+class OverlayCell:
+    row:   int
+    col:   int
+    color: tuple[int, int, int]
+    pulse: bool   # True → brightness modulated by sine wave; False → solid
+
+
 class MatrixController:
     def __init__(self, sense: SenseHat, loop: asyncio.AbstractEventLoop) -> None:
         self._sense = sense
         self._loop = loop
         self._task: asyncio.Task | None = None
         self._hw_lock = threading.Lock()
+        self._overlay: list[OverlayCell] = []
+
+    # ── overlay management ───────────────────────────────────────────────
+
+    def _set_overlay(self, cells: list[dict]) -> None:
+        parsed: list[OverlayCell] = []
+        for c in cells:
+            try:
+                parsed.append(OverlayCell(
+                    row=int(c["row"]),
+                    col=int(c["col"]),
+                    color=tuple(int(x) for x in c["color"]),  # type: ignore[arg-type]
+                    pulse=bool(c.get("pulse", False)),
+                ))
+            except (KeyError, ValueError, TypeError):
+                log.warning("Malformed overlay cell %r — skipping", c)
+        self._overlay = parsed
+        log.debug("Overlay set: %d cells", len(parsed))
+
+    def _apply_overlay(self, pixels: list, t: float) -> None:
+        """Composite overlay cells onto pixels in place. t = elapsed seconds."""
+        overlay = self._overlay
+        if not overlay:
+            return
+        brightness = (math.sin(2 * math.pi * t / _OVERLAY_PULSE_PERIOD) + 1) / 2
+        for cell in overlay:
+            idx = cell.row * 8 + cell.col
+            if not (0 <= idx < 64):
+                continue
+            pixels[idx] = _scale(cell.color, brightness) if cell.pulse else cell.color
+
+    # ── public interface ─────────────────────────────────────────────────
 
     async def run(self, effect: str, params: dict[str, Any]) -> None:
+        # Overlay commands update state without disturbing the running effect.
+        if effect == "set_overlay":
+            self._set_overlay(params.get("cells", []))
+            return
+        if effect == "clear_overlay":
+            self._overlay = []
+            log.debug("Overlay cleared")
+            return
+
         if self._task and not self._task.done():
             self._task.cancel()
             try:
@@ -64,12 +124,11 @@ class MatrixController:
                 pass
 
         handler = {
-            "off":          self._effect_off,
-            "solid":        self._effect_solid,
-            "pulse":        self._effect_pulse,
-            "flash":        self._effect_flash,
-            "rainbow":      self._effect_rainbow,
-            "status_bars":  self._effect_status_bars,
+            "off":     self._effect_off,
+            "solid":   self._effect_solid,
+            "pulse":   self._effect_pulse,
+            "flash":   self._effect_flash,
+            "rainbow": self._effect_rainbow,
         }.get(effect)
 
         if handler is None:
@@ -94,29 +153,16 @@ class MatrixController:
             except asyncio.CancelledError:
                 pass
 
-    # ── helpers ──────────────────────────────────────────────────────────
+    # ── hardware helpers ─────────────────────────────────────────────────
 
     async def _set_pixels(self, pixels: list[tuple[int, int, int]]) -> None:
-        # Convert to list-of-lists for maximum sense_hat version compatibility.
         pixels_ll = [[r, g, b] for r, g, b in pixels]
         def _write() -> None:
             with self._hw_lock:
                 self._sense.set_pixels(pixels_ll)
         await self._loop.run_in_executor(None, _write)
 
-    async def _set_all(self, color: tuple[int, int, int]) -> None:
-        # set_pixels with an explicit list-of-lists is the safest form of the
-        # sense_hat API — clear(tuple) behaves inconsistently across versions.
-        r, g, b = color
-        pixels = [[r, g, b]] * 64
-        def _write() -> None:
-            with self._hw_lock:
-                self._sense.set_pixels(pixels)
-        await self._loop.run_in_executor(None, _write)
-
     async def _clear(self) -> None:
-        # Wrapped so the hw_lock serialises this against any in-flight _set_all
-        # thread that survived task cancellation.
         def _write() -> None:
             with self._hw_lock:
                 self._sense.clear()
@@ -124,12 +170,38 @@ class MatrixController:
 
     # ── effects ──────────────────────────────────────────────────────────
 
-    async def _effect_off(self, params: dict) -> None:
-        await self._clear()
+    async def _effect_off(self, _params: dict) -> None:
+        """Black background; keeps running so overlay can animate."""
+        step = 0.05
+        t = 0.0
+        try:
+            while True:
+                if self._overlay:
+                    pixels = [_OFF] * 64
+                    self._apply_overlay(pixels, t)
+                    await self._set_pixels(pixels)
+                    await asyncio.sleep(step)
+                    t += step
+                else:
+                    await self._clear()
+                    await asyncio.sleep(1.0)
+                    t += 1.0
+        except asyncio.CancelledError:
+            raise
 
     async def _effect_solid(self, params: dict) -> None:
         color = _parse_color(params.get("color"), _WHITE)
-        await self._set_all(color)
+        step = 0.05
+        t = 0.0
+        try:
+            while True:
+                pixels = [color] * 64
+                self._apply_overlay(pixels, t)
+                await self._set_pixels(pixels)
+                await asyncio.sleep(step)
+                t += step
+        except asyncio.CancelledError:
+            raise
 
     async def _effect_pulse(self, params: dict) -> None:
         color = _parse_color(params.get("color"), _WHITE)
@@ -140,7 +212,9 @@ class MatrixController:
         try:
             while True:
                 brightness = (math.sin(2 * math.pi * t / period) + 1) / 2
-                await self._set_all(_scale(color, brightness))
+                pixels = [_scale(color, brightness)] * 64
+                self._apply_overlay(pixels, t)
+                await self._set_pixels(pixels)
                 await asyncio.sleep(step)
                 t += step
         except asyncio.CancelledError:
@@ -151,38 +225,19 @@ class MatrixController:
         count = int(params.get("count", 3))
         speed = float(params.get("speed", 1.0))
         half = 0.5 / max(speed, 0.05)
+        t = 0.0
         try:
             for _ in range(count):
-                await self._set_all(color)
-                await asyncio.sleep(half)
-                await self._clear()
-                await asyncio.sleep(half)
-        except asyncio.CancelledError:
-            raise
-
-    async def _effect_status_bars(self, params: dict) -> None:
-        """Left-to-right comet sweep on up to 8 rows.
-
-        Command format:
-          {"effect": "status_bars",
-           "stages": {"0": {"indicator": [r,g,b], "status": [r,g,b]}, ...},
-           "speed": 1.0}
-
-        Keys in `stages` are row indices (0-7). Rows not listed are off.
-        The comet sweeps cols 2-7 on each row; cols 0-1 stay solid.
-        """
-        raw_stages: dict = params.get("stages", {})
-        # Coerce string keys (JSON object keys) to int.
-        stages = {int(k): v for k, v in raw_stages.items()}
-        speed = float(params.get("speed", 1.0))
-        step_delay = 0.15 / max(speed, 0.05)
-        sweep_pos = 0
-        try:
-            while True:
-                pixels = _render_status_frame(stages, sweep_pos)
+                pixels = [color] * 64
+                self._apply_overlay(pixels, t)
                 await self._set_pixels(pixels)
-                await asyncio.sleep(step_delay)
-                sweep_pos = (sweep_pos + 1) % 6
+                await asyncio.sleep(half)
+                t += half
+                pixels = [_OFF] * 64
+                self._apply_overlay(pixels, t)
+                await self._set_pixels(pixels)
+                await asyncio.sleep(half)
+                t += half
         except asyncio.CancelledError:
             raise
 
@@ -195,7 +250,10 @@ class MatrixController:
             while True:
                 hue = (t / period) % 1.0
                 r, g, b = colorsys.hsv_to_rgb(hue, 1.0, 1.0)
-                await self._set_all((_clamp(r * 255), _clamp(g * 255), _clamp(b * 255)))
+                rgb = (_clamp(r * 255), _clamp(g * 255), _clamp(b * 255))
+                pixels = [rgb] * 64
+                self._apply_overlay(pixels, t)
+                await self._set_pixels(pixels)
                 await asyncio.sleep(step)
                 t += step
         except asyncio.CancelledError:

@@ -1,14 +1,14 @@
-"""Connectivity → LED matrix logic handler.
+"""Connectivity → LED matrix overlay logic.
 
 Monitors the three connection stages for the local Pi by subscribing to:
   sensors.<host>.sensehat.network.internet   (from sensehat.py network poller)
   sensors.<host>.sensehat.network.rpi_rpi    (from sensehat.py network poller)
   sensors.<host>.msr2.online                 (from mmwave.py ESPHome bridge)
 
-When any stage is not yet known or is False, publishes a status_bars command
-to the local LED matrix showing the current connectivity state. When all
-three stages are True, publishes {"effect": "off"} to yield the display back
-to the presence-detection logic.
+When any stage is not True, publishes a set_overlay command that places a
+2-pixel indicator in the bottom row of the LED matrix (row 7) for each
+failing stage — without disturbing the main display effect. When all three
+stages are True, clears the overlay.
 """
 from __future__ import annotations
 
@@ -16,44 +16,25 @@ import asyncio
 import json
 import logging
 import signal
-from typing import Any
 
 import nats
 
 from bare_metal.common import load_runtime_config
-from bare_metal.display.status_renderer import (
-    COLOR_CONNECTED,
-    COLOR_PENDING,
-    STAGE_BASE_COLORS,
-)
+from bare_metal.display.status_renderer import build_overlay_cells
 
 log = logging.getLogger(__name__)
 
-# Row index → connectivity key mapping (matches status_renderer row layout).
-_STAGE_ROWS: dict[int, str] = {
-    0: "internet",
-    1: "msr2",
-    2: "rpi_rpi",
-}
 
-
-def _status_bars_payload(connectivity: dict[str, bool | None]) -> bytes:
-    stages: dict[str, Any] = {}
-    for row_idx, key in _STAGE_ROWS.items():
-        connected = connectivity.get(key)
-        status_color = list(COLOR_CONNECTED) if connected else list(COLOR_PENDING)
-        stages[str(row_idx)] = {
-            "indicator": list(STAGE_BASE_COLORS[row_idx]),
-            "status":    status_color,
-        }
+def _set_overlay_payload(connectivity: dict[str, bool | None]) -> bytes:
+    cells = build_overlay_cells(connectivity)
     return json.dumps(
-        {"effect": "status_bars", "stages": stages},
+        {"effect": "set_overlay", "cells": cells},
         separators=(",", ":"),
     ).encode()
 
 
-def _off_payload() -> bytes:
-    return json.dumps({"effect": "off"}, separators=(",", ":")).encode()
+def _clear_overlay_payload() -> bytes:
+    return json.dumps({"effect": "clear_overlay"}, separators=(",", ":")).encode()
 
 
 async def main() -> None:
@@ -97,16 +78,14 @@ async def main() -> None:
     )
 
     async def _update_matrix() -> None:
-        all_connected = all(v is True for v in connectivity.values())
-        if all_connected:
-            log.info("All stages connected — clearing matrix")
-            await nc.publish(matrix_subject, _off_payload())
+        if all(v is True for v in connectivity.values()):
+            log.info("All stages connected — clearing overlay")
+            await nc.publish(matrix_subject, _clear_overlay_payload())
         else:
             log.debug("Connectivity state: %s", connectivity)
-            await nc.publish(matrix_subject, _status_bars_payload(connectivity))
+            await nc.publish(matrix_subject, _set_overlay_payload(connectivity))
 
     async def handle_network(msg: nats.aio.msg.Msg) -> None:
-        # Subject: sensors.<host>.sensehat.network.<metric>
         parts = msg.subject.split(".")
         if len(parts) < 5:
             return
@@ -151,7 +130,7 @@ async def main() -> None:
         host, host,
     )
 
-    # Show the initial unknown/pending state immediately.
+    # Publish initial overlay state immediately (all stages unknown → show overlay).
     await _update_matrix()
 
     loop = asyncio.get_running_loop()
