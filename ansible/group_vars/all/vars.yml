@@ -50,9 +50,10 @@ nats_permissions:
       - "config.{{ host_label }}.msr2.>"
     sub: ["_INBOX.>"]
   intercom:
-    pub: ["sensors.{{ host_label }}.intercom.>"]
+    pub:
+      - "command.*.intercom.*"
     sub:
-      - "command.{{ host_label }}.intercom.>"
+      - "command.{{ host_label }}.intercom.*"
       - "_INBOX.>"
   logic:
     pub:

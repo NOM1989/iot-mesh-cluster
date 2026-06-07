@@ -27,6 +27,11 @@
       - ca-certificates
       - curl
       - gnupg
+      - gstreamer1.0-tools
+      - gstreamer1.0-plugins-good
+      - gstreamer1.0-plugins-bad
+      - gstreamer1.0-alsa
+      - python3-hid
     state: present
 
 - name: Create mesh group
@@ -39,8 +44,9 @@
     name: mesh
     group: mesh
     # i2c for the Sense HAT sensors; input so /dev/input/event0
-    # (the joystick) is readable; video for /dev/fb0 (LED matrix framebuffer).
-    groups: [i2c, input, video]
+    # (the joystick) is readable; video for /dev/fb0 (LED matrix framebuffer);
+    # audio for /dev/snd/* (Jabra USB mic/speaker).
+    groups: [i2c, input, video, audio]
     append: true
     system: true
     shell: /usr/sbin/nologin
