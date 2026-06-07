@@ -24,6 +24,18 @@ class WakeWordDetector:
             inference_framework="onnx",
         )
 
+    def reset(self) -> None:
+        """Flush the model's audio context window.
+
+        openWakeWord uses a ~1.5 s sliding spectrogram buffer.  After a
+        detection, call this so the buffer no longer contains wake-word
+        features when we return to LISTENING.  25 × 80 ms = 2 s of
+        silence is enough to evict the entire window.
+        """
+        silence = np.zeros(1280, dtype=np.int16)
+        for _ in range(25):
+            self._model.predict(silence)
+
     def predict(self, chunk_int16: bytes) -> bool:
         """Return True if wake word score exceeds threshold on this chunk."""
         audio = np.frombuffer(chunk_int16, dtype=np.int16)

@@ -3,9 +3,10 @@
 - name: Install voice assistant system dependencies
   ansible.builtin.apt:
     name:
-      - portaudio19-dev   # required by PyAudio C extension
-      - python3-dev       # C headers for building pyaudio wheel
-      - libgomp1          # OpenMP runtime used by onnxruntime
+      - portaudio19-dev      # required by PyAudio C extension
+      - python3-dev          # C headers for building pyaudio wheel
+      - python3-pkg-resources  # provides pkg_resources needed by webrtcvad wrapper
+      - libgomp1             # OpenMP runtime used by onnxruntime
       - wget
       - unzip
     state: present
@@ -21,7 +22,9 @@
 - name: Install voice base Python packages into shared venv
   ansible.builtin.pip:
     name:
+      - "setuptools"
       - "pyaudio>=0.2.14"
+      - "webrtcvad>=2.0.10"
       - "onnxruntime>=1.17.0"
       - "vosk>=0.3.45"
       - "scipy>=1.3"

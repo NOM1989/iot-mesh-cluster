@@ -1,53 +1,46 @@
-"""Silero VAD wrapper using onnxruntime — no PyTorch dependency.
+"""WebRTC VAD wrapper for speech endpoint detection.
 
-Loads the ONNX export of Silero VAD v4. Maintains LSTM hidden state
-across chunks so context is preserved within a single utterance.
-Call reset() before each new recording window.
+Uses the webrtcvad library (Google's WebRTC voice activity detector).
+Stateless — no model files or LSTM hidden state required.
 
-ONNX model inputs (v4 canonical export):
-  input  float32 [1, num_samples]   normalised audio at 16 kHz
-  h      float32 [2, 1, 64]         LSTM hidden state
-  c      float32 [2, 1, 64]         LSTM cell state
-  sr     int64   scalar             sample rate (16000)
+Each call to is_speech() splits the 80 ms chunk into four 20 ms frames
+and applies a majority vote, so a chunk is considered speech if more than
+half of its frames contain speech.
+
+aggressiveness controls sensitivity:
+  0 — least aggressive (accepts more speech, misses less)
+  1 — moderate
+  2 — moderate-aggressive  (good default)
+  3 — most aggressive (fewest false positives, may clip quiet speech)
 """
 
 from __future__ import annotations
 
-import numpy as np
-import onnxruntime as ort
+import webrtcvad
 
-_SAMPLE_RATE = np.array(16_000, dtype=np.int64)
+_SAMPLE_RATE = 16_000
+_FRAME_MS = 20                      # webrtcvad accepts 10, 20, or 30 ms
+_FRAME_SAMPLES = _SAMPLE_RATE * _FRAME_MS // 1000   # 320 samples
+_FRAME_BYTES = _FRAME_SAMPLES * 2   # 2 bytes per int16 sample
 
 
-class SileroVAD:
-    def __init__(self, model_path: str, threshold: float = 0.5) -> None:
-        opts = ort.SessionOptions()
-        opts.inter_op_num_threads = 1
-        opts.intra_op_num_threads = 1
-        self._session = ort.InferenceSession(model_path, sess_options=opts)
-        self._threshold = threshold
-        self.reset()
+class WebRTCVAD:
+    def __init__(self, aggressiveness: int = 2) -> None:
+        self._vad = webrtcvad.Vad(aggressiveness)
 
     def reset(self) -> None:
-        """Reset LSTM hidden state — call at the start of each recording window."""
-        self._h = np.zeros((2, 1, 64), dtype=np.float32)
-        self._c = np.zeros((2, 1, 64), dtype=np.float32)
+        """No-op: webrtcvad is stateless."""
 
     def is_speech(self, chunk_int16: bytes) -> bool:
-        """Return True if the chunk likely contains speech."""
-        audio = np.frombuffer(chunk_int16, dtype=np.int16).astype(np.float32) / 32768.0
-        audio = audio[np.newaxis, :]  # [1, num_samples]
-        outs = self._session.run(
-            None,
-            {
-                "input": audio,
-                "h": self._h,
-                "c": self._c,
-                "sr": _SAMPLE_RATE,
-            },
-        )
-        # outs[0] = speech probability [1, 1], outs[1] = new h, outs[2] = new c
-        prob = float(outs[0].squeeze())
-        self._h = outs[1]
-        self._c = outs[2]
-        return prob >= self._threshold
+        """Return True if the majority of 20 ms frames in the chunk contain speech."""
+        speech = 0
+        total = 0
+        for offset in range(0, len(chunk_int16) - _FRAME_BYTES + 1, _FRAME_BYTES):
+            frame = chunk_int16[offset : offset + _FRAME_BYTES]
+            try:
+                if self._vad.is_speech(frame, _SAMPLE_RATE):
+                    speech += 1
+                total += 1
+            except Exception:
+                pass
+        return total > 0 and speech > total // 2

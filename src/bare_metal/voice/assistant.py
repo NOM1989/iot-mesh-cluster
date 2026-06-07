@@ -41,7 +41,7 @@ from nats.aio.msg import Msg
 from bare_metal.common import load_runtime_config, utc_now_iso
 
 from .wake_word import WakeWordDetector
-from .vad import SileroVAD
+from .vad import WebRTCVAD
 from .stt import VoskSTT
 
 log = logging.getLogger(__name__)
@@ -69,7 +69,7 @@ class VoiceAssistant:
         chunk_frames: int,
         vad_silence_ms: int,
         wake: WakeWordDetector,
-        vad: SileroVAD,
+        vad: WebRTCVAD,
         stt: VoskSTT,
     ) -> None:
         self._nc = nc
@@ -77,6 +77,9 @@ class VoiceAssistant:
         self._device_index = device_index
         self._chunk_frames = chunk_frames
         self._silence_chunks = max(1, vad_silence_ms * _SAMPLE_RATE // (chunk_frames * 1000))
+        # Minimum chunks to record before silence can end the utterance.
+        # Prevents an immediate-silence cycle if the user pauses after the wake word.
+        self._min_record_chunks = max(self._silence_chunks, 10)  # at least 800 ms
         self._wake = wake
         self._vad = vad
         self._stt = stt
@@ -214,6 +217,9 @@ class VoiceAssistant:
                     self._state = State.TRIGGER
                     self._play_wake_chime_bg(audio_device)
                     await self._led_pulse_blue()
+                    # Flush the model's 1.5 s context window so it can't
+                    # re-detect immediately when we return to LISTENING.
+                    await loop.run_in_executor(None, self._wake.reset)
                     self._vad.reset()
                     audio_buffer = []
                     consecutive_silence = 0
@@ -229,7 +235,7 @@ class VoiceAssistant:
                 else:
                     consecutive_silence += 1
 
-                if consecutive_silence >= self._silence_chunks:
+                if consecutive_silence >= self._silence_chunks and len(audio_buffer) >= self._min_record_chunks:
                     log.info("Silence detected — transcribing %d chunks", len(audio_buffer))
                     self._state = State.PROCESSING
                     full_audio = b"".join(audio_buffer)
@@ -260,12 +266,8 @@ async def main() -> None:
         "vosk_model",
         "/opt/iot-mesh-cluster/models/voice/vosk-model-small-en-us-0.15",
     )
-    silero_model_path: str = voice_cfg.get(
-        "silero_model",
-        "/opt/iot-mesh-cluster/models/voice/silero_vad.onnx",
-    )
     wake_model_name: str = voice_cfg.get("wake_model", "hey_jarvis")
-    vad_threshold: float = float(voice_cfg.get("vad_threshold", 0.5))
+    vad_aggressiveness: int = int(voice_cfg.get("vad_aggressiveness", 2))
     vad_silence_ms: int = int(voice_cfg.get("vad_silence_ms", 800))
     chunk_ms: int = int(voice_cfg.get("chunk_ms", 80))
     chunk_frames: int = _SAMPLE_RATE * chunk_ms // 1000
@@ -281,8 +283,7 @@ async def main() -> None:
             break
     pa_probe.terminate()
 
-    log.info("Loading Silero VAD from %s", silero_model_path)
-    vad = SileroVAD(silero_model_path, threshold=vad_threshold)
+    vad = WebRTCVAD(aggressiveness=vad_aggressiveness)
     log.info("Loading wake word model: %s", wake_model_name)
     wake = WakeWordDetector(model_name=wake_model_name)
 

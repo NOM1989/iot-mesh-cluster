@@ -134,9 +134,8 @@
       voice:
         audio_device: "{{ intercom.audio_device | default('plughw:USB') }}"
         vosk_model: "/opt/iot-mesh-cluster/models/voice/vosk-model-small-en-us-0.15"
-        silero_model: "/opt/iot-mesh-cluster/models/voice/silero_vad.onnx"
         wake_model: "hey_jarvis"
-        vad_threshold: 0.5
+        vad_aggressiveness: 2
         vad_silence_ms: 800
         chunk_ms: 80
   register: runtime_cfg
