@@ -1,12 +1,12 @@
 """Voice assistant: wake word → VAD → STT → NATS publish.
 
 Audio pipeline:
-  PyAudio (16 kHz mono) → openWakeWord → Silero VAD (ONNX) → Vosk → NATS
+  PyAudio (16 kHz mono) → openWakeWord → WebRTC VAD → Vosk → NATS
 
 State machine:
   LISTENING  — openWakeWord watches the mic stream chunk-by-chunk
   TRIGGER    — wake word detected; chime + blue LED pulse triggered
-  RECORDING  — Silero VAD accumulates audio until silence
+  RECORDING  — WebRTC VAD accumulates audio until silence
   PROCESSING — Vosk transcribes the buffered audio (chunks are discarded)
   SUSPENDED  — intercom call active; PyAudio stream is closed
 
@@ -26,8 +26,10 @@ Config (from /etc/iot-mesh/config.json, section "voice"):
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
+import os
 import signal
 import subprocess
 from enum import Enum, auto
@@ -47,6 +49,20 @@ from .stt import VoskSTT
 log = logging.getLogger(__name__)
 
 _SOUNDS_DIR = Path(__file__).parent.parent / "media" / "sounds"
+
+
+@contextlib.contextmanager
+def _quiet_alsa():
+    """Suppress C-level ALSA/JACK noise written directly to stderr (fd 2)."""
+    devnull = os.open(os.devnull, os.O_WRONLY)
+    old = os.dup(2)
+    os.dup2(devnull, 2)
+    os.close(devnull)
+    try:
+        yield
+    finally:
+        os.dup2(old, 2)
+        os.close(old)
 _SAMPLE_RATE = 16_000
 _FORMAT = pyaudio.paInt16
 _CHANNELS = 1
@@ -117,7 +133,8 @@ class VoiceAssistant:
 
     def _open_stream(self) -> None:
         if self._pa is None:
-            self._pa = pyaudio.PyAudio()
+            with _quiet_alsa():
+                self._pa = pyaudio.PyAudio()
         self._stream = self._pa.open(
             format=_FORMAT,
             channels=_CHANNELS,
@@ -273,7 +290,8 @@ async def main() -> None:
     chunk_frames: int = _SAMPLE_RATE * chunk_ms // 1000
 
     # Probe PyAudio for the USB audio input device index
-    pa_probe = pyaudio.PyAudio()
+    with _quiet_alsa():
+        pa_probe = pyaudio.PyAudio()
     device_index = 0
     for i in range(pa_probe.get_device_count()):
         info = pa_probe.get_device_info_by_index(i)
